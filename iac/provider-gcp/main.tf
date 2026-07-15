@@ -278,6 +278,7 @@ module "cluster" {
   gcp_zone                         = var.gcp_zone
   google_service_account_key       = module.init.google_service_account_key
   network_name                     = var.network_name
+  subnetwork_name                  = var.subnetwork_name
 
   build_clusters_config  = var.build_clusters_config
   client_clusters_config = var.client_clusters_config

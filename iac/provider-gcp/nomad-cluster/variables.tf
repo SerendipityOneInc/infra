@@ -186,6 +186,11 @@ variable "gcp_zone" {
   type = string
 }
 
+variable "subnetwork_name" {
+  type    = string
+  default = ""
+}
+
 variable "network_name" {
   type = string
 }

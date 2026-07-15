@@ -121,7 +121,8 @@ resource "google_compute_instance_template" "server" {
   }
 
   network_interface {
-    network = var.network_name
+    network    = var.network_name
+    subnetwork = var.subnetwork_name != "" ? var.subnetwork_name : null
 
     # Create access config dynamically. If a public ip is requested, we just need the empty `access_config` block
     # to automatically assign an external IP address.

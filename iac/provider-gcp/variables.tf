@@ -761,6 +761,14 @@ variable "network_name" {
   default = "default"
 }
 
+# Subnetwork for instances. Required when network_name is a custom-mode VPC
+# (GCP rejects instance templates that specify only `network` there).
+# Leave empty for auto-mode VPCs (e.g. "default").
+variable "subnetwork_name" {
+  type    = string
+  default = ""
+}
+
 variable "volume_token_issuer" {
   type    = string
   default = ""

@@ -81,6 +81,11 @@ variable "gcp_zone" {
   type        = string
 }
 
+variable "subnetwork_name" {
+  type    = string
+  default = ""
+}
+
 variable "network_name" {
   description = "Name of the VPC network for the cluster"
   type        = string
