@@ -543,6 +543,17 @@ components:
         path:
           type: string
           description: Path of the volume
+        source:
+          type: string
+          description: >-
+            Optional validated relative subtree under the volume's root to
+            export instead of the default per-volume UUID directory
+            (subtree-export). Must be a clean relative path with no '..' escape.
+        readOnly:
+          type: boolean
+          description: >-
+            Enforce read-only at the host NFS proxy (not just guest mount
+            flags). Defaults to false.
       required:
         - name
         - path

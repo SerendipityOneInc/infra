@@ -161,6 +161,12 @@ type VolumeMountConfig struct {
 	Name string
 	Path string
 	Type string
+	// Source: optional validated relative subtree under the volume type's root.
+	// When non-empty, the NFS proxy exports <root>/<source> instead of the
+	// default <root>/team-<teamID>/vol-<volumeID> UUID path (subtree-export).
+	Source string
+	// ReadOnly: enforce read-only at the host NFS proxy.
+	ReadOnly bool
 }
 
 type EnvdMetadata struct {

@@ -119,7 +119,7 @@ func (h *NFSHandler) Mount(
 	conn net.Conn,
 	request nfs.MountRequest,
 ) (nfs.MountStatus, billy.Filesystem, []nfs.AuthFlavor) {
-	fs, err := h.getChroot(ctx, conn.RemoteAddr(), request)
+	fs, readOnly, err := h.getChroot(ctx, conn.RemoteAddr(), request)
 	if err != nil {
 		sourceIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 
@@ -131,22 +131,22 @@ func (h *NFSHandler) Mount(
 		return nfs.MountStatusErrAcces, mountFailedFS{}, nil
 	}
 
-	return nfs.MountStatusOk, wrapChrooted(fs), nil
+	return nfs.MountStatusOk, wrapChrooted(fs, readOnly), nil
 }
 
 var mountPath = regexp.MustCompile(`^/[^/]+$`)
 
-func (h *NFSHandler) getChroot(ctx context.Context, remoteAddr net.Addr, request nfs.MountRequest) (*chrooted.Chrooted, error) {
+func (h *NFSHandler) getChroot(ctx context.Context, remoteAddr net.Addr, request nfs.MountRequest) (*chrooted.Chrooted, bool, error) {
 	sbx, err := h.sandboxes.GetByHostPort(remoteAddr.String())
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnknownSandbox, err)
+		return nil, false, fmt.Errorf("%w: %w", ErrUnknownSandbox, err)
 	}
 
 	// normalize the mount path
 	requestedPath := string(request.Dirpath)
 	regexpMatch := mountPath.MatchString(requestedPath)
 	if !regexpMatch {
-		return nil, fmt.Errorf(`%w: expected "/volume_name", got %q`, ErrInvalidMountPath, requestedPath)
+		return nil, false, fmt.Errorf(`%w: expected "/volume_name", got %q`, ErrInvalidMountPath, requestedPath)
 	}
 
 	volumeName := requestedPath[1:]
@@ -161,21 +161,23 @@ func (h *NFSHandler) getChroot(ctx context.Context, remoteAddr net.Addr, request
 		}
 	}
 	if volumeMount == nil {
-		return nil, fmt.Errorf("failed to mount %q: %w", volumeName, ErrVolumeNotFound)
+		return nil, false, fmt.Errorf("failed to mount %q: %w", volumeName, ErrVolumeNotFound)
 	}
 
 	teamID, ok := pkg.TryParseUUID(sbx.Metadata.Runtime.TeamID)
 	if !ok {
-		return nil, ErrInvalidTeamID
+		return nil, false, ErrInvalidTeamID
 	}
 
 	if volumeMount.ID == uuid.Nil {
-		return nil, ErrVolumeID
+		return nil, false, ErrVolumeID
 	}
 
-	fs, err := h.builder.Chroot(ctx, volumeMount.Type, teamID, volumeMount.ID)
+	// volumeMount.Source (when set) selects an explicit subtree under the volume
+	// type root; empty keeps the legacy per-volume UUID path.
+	fs, err := h.builder.Chroot(ctx, volumeMount.Type, teamID, volumeMount.ID, volumeMount.Source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to mount %q: %w", volumeName, err)
+		return nil, false, fmt.Errorf("failed to mount %q: %w", volumeName, err)
 	}
 
 	lifecycleID := sbx.LifecycleID
@@ -185,14 +187,14 @@ func (h *NFSHandler) getChroot(ctx context.Context, remoteAddr net.Addr, request
 
 	h.chrootMountsCounter.Add(ctx, 1)
 
-	return fs, nil
+	return fs, volumeMount.ReadOnly, nil
 }
 
 func (h *NFSHandler) Change(_ context.Context, filesystem billy.Filesystem) billy.Change {
 	for {
 		isolated, ok := filesystem.(*wrappedFS)
 		if ok {
-			return wrapChange(isolated.chroot)
+			return wrapChange(isolated.chroot, isolated.readOnly)
 		}
 
 		unwrappable, ok := filesystem.(interface{ Unwrap() billy.Filesystem })

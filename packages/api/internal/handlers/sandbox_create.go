@@ -470,11 +470,25 @@ func convertAPIVolumesToOrchestratorVolumes(ctx context.Context, sqlClient *sqlc
 		}
 		usedPaths[v.Path] = struct{}{}
 
+		// Optional subtree-export source: engine-provided relative subtree under
+		// the volume type root. Validate it is a clean relative path with no
+		// escape; the orchestrator re-validates as defense in depth.
+		source := sharedUtils.DerefOrDefault(v.Source, "")
+		if source != "" {
+			if reason, ok := isValidVolumeSource(source); !ok {
+				invalidVolumeMounts = append(invalidVolumeMounts, InvalidMount{Index: index, Reason: reason})
+
+				continue
+			}
+		}
+
 		results = append(results, &orchestrator.SandboxVolumeMount{
-			Id:   actualVolume.ID.String(),
-			Path: v.Path,
-			Type: actualVolume.VolumeType,
-			Name: actualVolume.Name,
+			Id:       actualVolume.ID.String(),
+			Path:     v.Path,
+			Type:     actualVolume.VolumeType,
+			Name:     actualVolume.Name,
+			Source:   source,
+			ReadOnly: sharedUtils.DerefOrDefault(v.ReadOnly, false),
 		})
 	}
 
@@ -496,6 +510,25 @@ func isValidMountPath(path string) (string, bool) {
 
 	if filepath.Clean(path) != path {
 		return "path must not contain any '.' or '..' components", false
+	}
+
+	return "", true
+}
+
+// isValidVolumeSource validates a subtree-export source: a clean, relative path
+// under the volume root with no traversal. Absolute paths and any '..' segment
+// are rejected (the orchestrator re-checks as defense in depth).
+func isValidVolumeSource(source string) (string, bool) {
+	if filepath.IsAbs(source) {
+		return "source must be a relative path", false
+	}
+
+	if strings.Contains(source, "..") {
+		return "source must not contain any '..' components", false
+	}
+
+	if filepath.Clean(source) != source {
+		return "source must be a clean relative path", false
 	}
 
 	return "", true

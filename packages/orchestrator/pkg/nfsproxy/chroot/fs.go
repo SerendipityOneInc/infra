@@ -4,6 +4,7 @@ package chroot
 
 import (
 	"os"
+	"syscall"
 
 	"github.com/go-git/go-billy/v5"
 
@@ -12,9 +13,16 @@ import (
 
 type wrappedFS struct {
 	chroot *chrooted.Chrooted
+	// readOnly enforces read-only at the host NFS proxy, independent of the
+	// guest's mount flags. All mutating operations return EROFS.
+	readOnly bool
 }
 
 func (f *wrappedFS) Create(filename string) (billy.File, error) {
+	if f.readOnly {
+		return nil, syscall.EROFS
+	}
+
 	result, err := f.chroot.Create(filename)
 
 	return maybeWrap(result), err
@@ -27,6 +35,10 @@ func (f *wrappedFS) Open(filename string) (billy.File, error) {
 }
 
 func (f *wrappedFS) OpenFile(filename string, flag int, perm os.FileMode) (billy.File, error) {
+	if f.readOnly && flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND) != 0 {
+		return nil, syscall.EROFS
+	}
+
 	result, err := f.chroot.OpenFile(filename, flag, perm)
 
 	return maybeWrap(result), err
@@ -37,10 +49,18 @@ func (f *wrappedFS) Stat(filename string) (os.FileInfo, error) {
 }
 
 func (f *wrappedFS) Rename(oldpath, newpath string) error {
+	if f.readOnly {
+		return syscall.EROFS
+	}
+
 	return f.chroot.Rename(oldpath, newpath)
 }
 
 func (f *wrappedFS) Remove(filename string) error {
+	if f.readOnly {
+		return syscall.EROFS
+	}
+
 	return f.chroot.Remove(filename)
 }
 
@@ -49,6 +69,10 @@ func (f *wrappedFS) Join(elem ...string) string {
 }
 
 func (f *wrappedFS) TempFile(dir, prefix string) (billy.File, error) {
+	if f.readOnly {
+		return nil, syscall.EROFS
+	}
+
 	result, err := f.chroot.TempFile(dir, prefix)
 
 	return maybeWrap(result), err
@@ -59,6 +83,10 @@ func (f *wrappedFS) ReadDir(path string) ([]os.FileInfo, error) {
 }
 
 func (f *wrappedFS) MkdirAll(filename string, perm os.FileMode) error {
+	if f.readOnly {
+		return syscall.EROFS
+	}
+
 	return f.chroot.MkdirAll(filename, perm)
 }
 
@@ -67,6 +95,10 @@ func (f *wrappedFS) Lstat(filename string) (os.FileInfo, error) {
 }
 
 func (f *wrappedFS) Symlink(target, link string) error {
+	if f.readOnly {
+		return syscall.EROFS
+	}
+
 	return f.chroot.Symlink(target, link)
 }
 
@@ -84,6 +116,6 @@ func (f *wrappedFS) Root() string {
 
 var _ billy.Filesystem = (*wrappedFS)(nil)
 
-func wrapChrooted(chroot *chrooted.Chrooted) *wrappedFS {
-	return &wrappedFS{chroot: chroot}
+func wrapChrooted(chroot *chrooted.Chrooted, readOnly bool) *wrappedFS {
+	return &wrappedFS{chroot: chroot, readOnly: readOnly}
 }

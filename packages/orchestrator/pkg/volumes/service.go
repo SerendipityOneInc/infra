@@ -65,7 +65,7 @@ func (s *Service) getVolumeRootPath(ctx context.Context, volume *orchestrator.Vo
 		return "", newAPIError(ctx, codes.InvalidArgument, http.StatusBadRequest, orchestrator.UserErrorCode_INVALID_REQUEST, "invalid volume ID %q", volume.GetVolumeId()).Err()
 	}
 
-	path, err := s.builder.BuildVolumePath(volumeType, teamID, volumeID)
+	path, err := s.builder.BuildVolumePath(volumeType, teamID, volumeID, "")
 	if err != nil {
 		if errors.Is(err, chrooted.ErrVolumeTypeNotFound) {
 			return "", newAPIError(ctx, codes.Internal, http.StatusInternalServerError, orchestrator.UserErrorCode_NOT_SUPPORTED, "unknown volume type").Err()
@@ -101,7 +101,7 @@ func (s *Service) getFilesystemAndPath(ctx context.Context, request volumePathRe
 		)
 	}
 
-	chroot, err := s.builder.Chroot(ctx, volumeType, teamID, volumeID)
+	chroot, err := s.builder.Chroot(ctx, volumeType, teamID, volumeID, "")
 	if err != nil {
 		if errors.Is(err, chrooted.ErrVolumeTypeNotFound) {
 			return nil, "", newAPIError(ctx,

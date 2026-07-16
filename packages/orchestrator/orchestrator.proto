@@ -75,6 +75,12 @@ message SandboxVolumeMount {
   string path = 2;
   string type = 3;
   string name = 4;
+  // source: optional validated relative subtree under the volume type's root.
+  // When set, the orchestrator NFS-exports <root>/<source> instead of the
+  // default <root>/team-<teamID>/vol-<volumeID> UUID path (subtree-export).
+  string source = 5;
+  // read_only: enforce read-only at the host NFS proxy (not just guest flags).
+  bool read_only = 6;
 }
 
 message SandboxNetworkConfig {
