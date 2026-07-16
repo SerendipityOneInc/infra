@@ -99,6 +99,10 @@ type SandboxVolumeMountConfig struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
 	Path string `json:"path"`
+	// Source + ReadOnly are persisted so pause/resume preserves subtree-export
+	// mounts (empty/false keeps the legacy per-volume UUID, read-write behavior).
+	Source   string `json:"source,omitempty"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
 }
 
 type SandboxAutoResumePolicy string

@@ -347,10 +347,17 @@ func convertFromDBMountsToAPIMounts(mounts []*dbtypes.SandboxVolumeMountConfig) 
 	results := make([]api.SandboxVolumeMount, 0, len(mounts))
 
 	for _, item := range mounts {
-		results = append(results, api.SandboxVolumeMount{
+		mount := api.SandboxVolumeMount{
 			Name: item.Name,
 			Path: item.Path,
-		})
+		}
+		if item.Source != "" {
+			mount.Source = &item.Source
+		}
+		if item.ReadOnly {
+			mount.ReadOnly = &item.ReadOnly
+		}
+		results = append(results, mount)
 	}
 
 	// this intentionally returns a pointer to the slice.
