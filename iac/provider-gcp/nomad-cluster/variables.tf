@@ -400,3 +400,18 @@ variable "additional_api_paths_handled_by_ingress" {
     timeout_sec = optional(number)
   }))
 }
+
+variable "juicefs_volumes" {
+  description = "SRP: JuiceFS-backed persistent volumes auto-mounted on client nodes at boot. Token fetched from Secret Manager (token_secret) by the node SA; never stored in metadata."
+  type = list(object({
+    console_url   = string
+    token_secret  = string
+    project       = string
+    volume        = string
+    mount_path    = string
+    subdir        = string
+    cache_group   = string
+    mount_options = string
+  }))
+  default = []
+}

@@ -192,6 +192,7 @@ module "build_cluster" {
   nfs_mount_subdir        = local.nfs_mount_subdir
   nfs_mount_opts          = local.nfs_mount_opts
   persistent_volume_types = {} // don't need to access persistent volumes when building templates
+  juicefs_volumes         = []
 
   environment = var.environment
   labels      = var.labels
@@ -252,6 +253,7 @@ module "client_cluster" {
   nfs_mount_subdir        = local.nfs_mount_subdir
   nfs_mount_opts          = local.nfs_mount_opts
   persistent_volume_types = var.persistent_volume_types
+  juicefs_volumes         = var.juicefs_volumes
 
   environment = var.environment
   labels      = var.labels

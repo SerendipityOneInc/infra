@@ -252,3 +252,18 @@ variable "persistent_volume_types" {
     nfs_mount_opts   = string
   }))
 }
+
+variable "juicefs_volumes" {
+  description = "SRP: JuiceFS-backed persistent volumes auto-mounted on client nodes at boot. Token fetched from Secret Manager (token_secret) by the node SA; never stored in metadata."
+  type = list(object({
+    console_url   = string
+    token_secret  = string
+    project       = string
+    volume        = string
+    mount_path    = string
+    subdir        = string
+    cache_group   = string
+    mount_options = string
+  }))
+  default = []
+}

@@ -28,6 +28,7 @@ locals {
     SET_ORCHESTRATOR_VERSION_METADATA = var.set_orchestrator_version_metadata ? "true" : "false"
     NODE_LABELS                       = join(",", var.node_labels)
     PERSISTENT_VOLUME_TYPES           = var.persistent_volume_types
+    JUICEFS_VOLUMES                   = var.juicefs_volumes
   })
 }
 

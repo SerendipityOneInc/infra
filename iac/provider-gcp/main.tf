@@ -335,6 +335,7 @@ module "cluster" {
   filestore_nfs_version       = var.filestore_nfs_version
 
   persistent_volume_types = local.persistent_volume_types
+  juicefs_volumes         = var.juicefs_volumes
 
   labels = var.labels
   prefix = var.prefix

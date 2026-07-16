@@ -106,6 +106,22 @@ echo "${config.nfs_location} ${config.local_mount_path} nfs ${config.nfs_mount_o
 mount "${config.local_mount_path}"
 %{ endfor }
 
+# SRP: JuiceFS-backed persistent volume(s). Auto-mounts on boot so node
+# recreation needs no manual step. The token is fetched from Secret Manager at
+# boot (node SA needs secretmanager.secretAccessor) — never baked into instance
+# metadata. Rendered per volume by the terraform template loop below.
+%{ for vol in JUICEFS_VOLUMES ~}
+# Install the EE client from our private console (idempotent across volumes).
+if ! command -v juicefs >/dev/null 2>&1; then
+  curl -fsSL "${vol.console_url}/static/juicefs" -o /usr/local/bin/juicefs
+  chmod +x /usr/local/bin/juicefs
+fi
+juicefs_token=$(gcloud secrets versions access latest --secret="${vol.token_secret}" --project="${vol.project}")
+mkdir -p "${vol.mount_path}"
+BASE_URL="${vol.console_url}" juicefs auth "${vol.volume}" --token "$juicefs_token"
+juicefs mount "${vol.volume}" "${vol.mount_path}" --subdir="${vol.subdir}" --cache-group="${vol.cache_group}" -d ${vol.mount_options}
+%{ endfor ~}
+
 # Add tmpfs for snapshotting
 # TODO: Parametrize this
 mkdir -p /mnt/snapshot-cache
