@@ -34,6 +34,9 @@ type storageEnv struct {
 	TemplateBasePath   string           `env:"LOCAL_TEMPLATE_STORAGE_BASE_PATH"`
 	BuildCacheBucket   string           `env:"BUILD_CACHE_BUCKET_NAME"`
 	BuildCacheBasePath string           `env:"LOCAL_BUILD_CACHE_STORAGE_BASE_PATH"`
+	// AzureAccount is the Azure Blob Storage account name, used to build the
+	// az://<account>/<container> URL for the AzureBucket provider.
+	AzureAccount string `env:"AZURE_STORAGE_ACCOUNT"`
 	// Parsed strictly: a malformed value fails resolution loudly (even for
 	// URL-configured roles) instead of being silently treated as false.
 	S3PathStyle bool `env:"S3_USE_PATH_STYLE"`
@@ -103,6 +106,16 @@ func legacyStorageURL(e storageEnv, bucket, basePath, name, bucketEnv, defaultBa
 		}
 
 		return u.String(), nil
+	case storage.AzureStorageProvider:
+		if bucket == "" {
+			return "", fmt.Errorf("%s storage bucket not configured: set %s", name, bucketEnv)
+		}
+		if e.AzureAccount == "" {
+			return "", fmt.Errorf("%s storage account not configured: set AZURE_STORAGE_ACCOUNT", name)
+		}
+
+		// az://<account>/<container> — the bucket env carries the container name.
+		return (&url.URL{Scheme: "az", Host: e.AzureAccount, Path: "/" + bucket}).String(), nil
 	default:
 		return "", fmt.Errorf("unknown storage provider: %s", e.Provider)
 	}

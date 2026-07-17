@@ -19,6 +19,7 @@ type Provider string
 const (
 	GCPStorageProvider   Provider = "GCPBucket"
 	AWSStorageProvider   Provider = "AWSBucket"
+	AzureStorageProvider Provider = "AzureBucket"
 	LocalStorageProvider Provider = "Local"
 
 	DefaultStorageProvider Provider = GCPStorageProvider
@@ -72,11 +73,43 @@ func ParseStorageURL(raw string) (Spec, error) {
 		return parseBucketURL(u, GCPStorageProvider)
 	case "s3":
 		return parseBucketURL(u, AWSStorageProvider)
+	case "az", "azblob":
+		return parseAzureURL(u)
 	case "file":
 		return parseFileURL(u)
 	default:
-		return Spec{}, fmt.Errorf("storage URL %q: unsupported scheme %q (want gs, s3, or file)", redactedURL(u), u.Scheme)
+		return Spec{}, fmt.Errorf("storage URL %q: unsupported scheme %q (want gs, s3, az, or file)", redactedURL(u), u.Scheme)
 	}
+}
+
+// parseAzureURL handles the Azure Blob Storage scheme:
+//
+//	az://<account>/<container>       Azure Blob Storage
+//	azblob://<account>/<container>   (alias)
+//
+// The account is stored in Spec.Endpoint and the container in Spec.Bucket, so
+// downstream construction (newAzureStorage) can resolve the service URL and
+// credentials from the usual environment (Managed Identity / DefaultAzureCredential,
+// AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_KEY, or AZURE_STORAGE_CONNECTION_STRING).
+func parseAzureURL(u *url.URL) (Spec, error) {
+	if u.User != nil {
+		return Spec{}, fmt.Errorf("storage URL %q: credentials in URLs are not supported", redactedURL(u))
+	}
+	if len(u.Query()) > 0 {
+		return Spec{}, fmt.Errorf("storage URL %q: %s:// does not accept query parameters", redactedURL(u), u.Scheme)
+	}
+
+	account := u.Host
+	if account == "" {
+		return Spec{}, fmt.Errorf("storage URL %q: missing account name (use az://<account>/<container>)", redactedURL(u))
+	}
+
+	container := strings.Trim(u.Path, "/")
+	if container == "" || strings.Contains(container, "/") {
+		return Spec{}, fmt.Errorf("storage URL %q: az:// requires exactly one path segment for the container (az://<account>/<container>)", redactedURL(u))
+	}
+
+	return Spec{Provider: AzureStorageProvider, Bucket: container, Endpoint: account}, nil
 }
 
 // redactedURL renders a URL for error messages with any userinfo stripped, so

@@ -41,6 +41,8 @@ func NewProvider(ctx context.Context, spec Spec, opts ...Option) (StorageProvide
 		return newFileSystemStorage(spec.BasePath, o.uploadBaseURL, o.hmacKey), nil
 	case AWSStorageProvider:
 		return newAWSStorage(ctx, spec, o.limiter)
+	case AzureStorageProvider:
+		return newAzureStorage(ctx, spec, o.limiter)
 	case GCPStorageProvider:
 		return NewGCP(ctx, spec.Bucket, o.limiter)
 	}
