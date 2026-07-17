@@ -1,0 +1,41 @@
+data "azurerm_client_config" "current" {}
+
+locals {
+  # Key Vault names are 3-24 chars, must start with a letter, and allow only
+  # alphanumerics and hyphens. Derive a deterministic, globally-unique-ish name
+  # from the (globally unique) storage account name unless one is supplied.
+  key_vault_name = var.key_vault_name != "" ? var.key_vault_name : substr("kv-${var.storage_account_name}", 0, 24)
+}
+
+# ---
+# User-assigned Managed Identity for the cluster nodes (VMSS). Mirrors the AWS
+# instance IAM role: it is granted data-plane access to object storage (Blob),
+# pull access to the container registry (AcrPull), and read access to secrets
+# (Key Vault Secrets User).
+# ---
+resource "azurerm_user_assigned_identity" "infra_instances" {
+  name                = "${var.prefix}infra-instances"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+
+  tags = var.tags
+}
+
+resource "azurerm_role_assignment" "instances_blob_data_contributor" {
+  scope                = azurerm_storage_account.storage.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.infra_instances.principal_id
+}
+
+resource "azurerm_role_assignment" "instances_acr_pull" {
+  scope                = azurerm_container_registry.core.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_user_assigned_identity.infra_instances.principal_id
+}
+
+resource "azurerm_role_assignment" "instances_kv_secrets_user" {
+  scope                = azurerm_key_vault.main.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_user_assigned_identity.infra_instances.principal_id
+}
+
