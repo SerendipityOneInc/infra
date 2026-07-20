@@ -1,0 +1,107 @@
+variable "prefix" {
+  type        = string
+  description = "Name prefix for all resources"
+  default     = "e2b-"
+}
+
+variable "resource_group_name" {
+  type        = string
+  description = "The resource group that holds the network resources"
+}
+
+variable "location" {
+  type        = string
+  description = "The Azure region for all resources"
+}
+
+variable "tags" {
+  type        = map(string)
+  description = "Tags to attach to resources created by this module"
+  default     = {}
+}
+
+# ---
+# Address space
+# ---
+variable "vnet_address_space" {
+  type        = list(string)
+  description = "CIDR block(s) for the virtual network"
+  default     = ["10.0.0.0/16"]
+}
+
+variable "cluster_subnet_cidr" {
+  type        = string
+  description = "CIDR for the subnet that holds the cluster nodes (server/api/client/build VMSS). Egress via NAT gateway, guarded by the cluster NSG."
+  default     = "10.0.0.0/20"
+}
+
+variable "services_subnet_cidr" {
+  type        = string
+  description = "CIDR for the auxiliary services subnet (e.g. private endpoints, databases). Also egresses via the NAT gateway."
+  default     = "10.0.16.0/20"
+}
+
+# ---
+# In-cluster ingress (client-proxy VMSS) ports. The L4 load balancer forwards
+# raw TCP to these ports; the in-cluster ingress terminates TLS and does all L7
+# host/path routing.
+# ---
+variable "ingress_https_port" {
+  type        = number
+  description = "Backend TCP port on the ingress/client-proxy nodes that terminates TLS (frontend 443 forwards here)"
+  default     = 443
+}
+
+variable "ingress_http_port" {
+  type        = number
+  description = "Backend TCP port on the ingress/client-proxy nodes serving plain HTTP (frontend 80 forwards here, used for redirects / ACME)"
+  default     = 80
+}
+
+# ---
+# Load balancer health probe. Mirrors the AWS ALB target-group health check
+# (path /ping) and the GCP client-proxy health check.
+# ---
+variable "health_probe_protocol" {
+  type        = string
+  description = "Protocol for the LB health probe: Tcp, Http, or Https"
+  default     = "Http"
+
+  validation {
+    condition     = contains(["Tcp", "Http", "Https"], var.health_probe_protocol)
+    error_message = "health_probe_protocol must be one of Tcp, Http, Https."
+  }
+}
+
+variable "health_probe_port" {
+  type        = number
+  description = "Port the LB health probe targets on the backend nodes"
+  default     = 8080
+}
+
+variable "health_probe_path" {
+  type        = string
+  description = "Request path for Http/Https health probes (ignored for Tcp)"
+  default     = "/ping"
+}
+
+variable "health_probe_interval_seconds" {
+  type        = number
+  description = "Interval between LB health probes"
+  default     = 5
+}
+
+variable "health_probe_number_of_probes" {
+  type        = number
+  description = "Consecutive probe failures before a backend node is taken out of rotation"
+  default     = 2
+}
+
+# ---
+# Management access
+# ---
+variable "ssh_allowed_source" {
+  type        = string
+  description = "Source address prefix (CIDR, '*'/'Internet', or a service tag like 'VirtualNetwork') permitted to reach SSH (22) on the cluster nodes. Mirrors the GCP internal-remote-connection firewall (IAP range in prod, open in dev)."
+  default     = "VirtualNetwork"
+}
