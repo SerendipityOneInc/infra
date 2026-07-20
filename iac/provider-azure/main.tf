@@ -86,6 +86,16 @@ module "init" {
   tags = var.tags
 }
 
+module "network" {
+  source = "./modules/network"
+
+  prefix              = var.prefix
+  resource_group_name = azurerm_resource_group.main.name
+  location            = var.location
+
+  tags = var.tags
+}
+
 resource "random_password" "volume_token_key" {
   length  = 32
   special = false
@@ -93,6 +103,16 @@ resource "random_password" "volume_token_key" {
   lifecycle {
     ignore_changes = [length, special]
   }
+}
+
+locals {
+  # Nomad node pool names (mirror provider-aws locals). The client (Firecracker
+  # host) pool is named "default" for backwards-compat with the orchestrator.
+  api_pool_name          = "api"
+  client_pool_name       = "default"
+  build_pool_name        = "build"
+  clickhouse_pool_name   = "clickhouse"
+  clickhouse_jobs_prefix = "clickhouse"
 }
 
 locals {
@@ -215,17 +235,75 @@ locals {
 }
 
 # ----------------------------------------------------------------------------
-# TODO(azure): compute + Nomad wiring. These are later chunks and are NOT part
-# of this foundation. When implemented they live at:
-#   ./nomad-cluster  -> VMSS-based Nomad/Consul cluster (mirrors provider-aws/nomad-cluster)
-#   ./nomad          -> Nomad jobspecs (mirrors provider-aws/nomad)
-# They consume module.init.* (identity, storage containers, ACR, Key Vault) and
-# the local.*_env_vars maps defined above.
-#
-# module "cluster" {
-#   source = "./nomad-cluster"
-#   ...
-# }
+# Compute plane: VMSS-based Nomad/Consul cluster (mirrors provider-aws/
+# nomad-cluster). Consumes module.init.* (identity, storage containers, ACR)
+# and module.network.* (cluster subnet, LB backend pool).
+# ----------------------------------------------------------------------------
+
+module "cluster" {
+  source = "./nomad-cluster"
+
+  prefix              = var.prefix
+  resource_group_name = azurerm_resource_group.main.name
+  location            = var.location
+
+  identity_id        = module.init.identity_id
+  identity_client_id = module.init.identity_client_id
+
+  cluster_subnet_id = module.network.cluster_subnet_id
+  # Only the client pool (client-proxy ingress) joins the L4 LB backend pool.
+  client_lb_backend_pool_ids = [module.network.lb_backend_pool_id]
+
+  nomad_acl_token_secret          = module.init.cluster.nomad_acl_token
+  consul_acl_token_secret         = module.init.cluster.consul_acl_token
+  consul_dns_request_token_secret = module.init.cluster.consul_dns_request_token
+  consul_gossip_encryption_key    = module.init.cluster.consul_gossip_encryption_key
+
+  storage_account_name           = module.init.storage_account_name
+  setup_container_name           = module.init.setup_container_name
+  fc_env_pipeline_container_name = module.init.fc_env_pipeline_container_name
+  fc_kernels_container_name      = module.init.fc_kernels_container_name
+  fc_versions_container_name     = module.init.fc_versions_container_name
+  fc_busybox_container_name      = module.init.fc_busybox_container_name
+  acr_login_server               = module.init.acr_login_server
+
+  control_server_cluster_size = var.control_server_cluster_size
+  control_server_machine_type = var.control_server_machine_type
+  control_server_image_id     = var.control_server_image_id != "" ? var.control_server_image_id : var.cluster_image_id
+
+  api_node_pool_name = local.api_pool_name
+  api_cluster_size   = var.api_cluster_size
+  api_machine_type   = var.api_server_machine_type
+  api_image_id       = var.api_image_id != "" ? var.api_image_id : var.cluster_image_id
+
+  client_node_pool_name               = local.client_pool_name
+  client_cluster_size                 = var.client_cluster_size
+  client_machine_type                 = var.client_server_machine_type
+  client_image_id                     = var.client_image_id != "" ? var.client_image_id : var.cluster_image_id
+  client_node_labels                  = var.client_node_labels
+  client_server_nested_virtualization = var.client_server_nested_virtualization
+  client_max_instances                = var.client_max_instances
+
+  build_node_pool_name               = local.build_pool_name
+  build_cluster_size                 = var.build_cluster_size
+  build_machine_type                 = var.build_server_machine_type
+  build_image_id                     = var.build_image_id != "" ? var.build_image_id : var.cluster_image_id
+  build_node_labels                  = var.build_node_labels
+  build_server_nested_virtualization = var.build_server_nested_virtualization
+  build_max_instances                = var.build_max_instances
+
+  clickhouse_node_pool_name        = local.clickhouse_pool_name
+  clickhouse_cluster_size          = var.clickhouse_cluster_size
+  clickhouse_machine_type          = var.clickhouse_server_machine_type
+  clickhouse_image_id              = var.clickhouse_image_id != "" ? var.clickhouse_image_id : var.cluster_image_id
+  clickhouse_job_constraint_prefix = local.clickhouse_jobs_prefix
+
+  tags = var.tags
+}
+
+# ----------------------------------------------------------------------------
+# TODO(azure): Nomad jobspecs live at ./nomad (mirrors provider-aws/nomad) and
+# are the next chunk. They consume the local.*_env_vars maps defined above.
 #
 # module "nomad" {
 #   source = "./nomad"

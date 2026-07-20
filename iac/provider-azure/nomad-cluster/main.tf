@@ -1,0 +1,255 @@
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = ">= 4.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.0"
+    }
+  }
+}
+
+locals {
+  setup_files = {
+    "scripts/run-consul.sh" = "run-consul",
+    "scripts/run-nomad.sh"  = "run-nomad"
+  }
+
+  setup_files_hash = {
+    "run-consul" = substr(filesha256("${path.module}/scripts/run-consul.sh"), 0, 5)
+    "run-nomad"  = substr(filesha256("${path.module}/scripts/run-nomad.sh"), 0, 5)
+  }
+
+  # Tag the Consul Azure cloud auto-join looks for to discover cluster members.
+  cluster_tag_name  = "cluster-discovery-name"
+  cluster_tag_value = "${var.prefix}nomad-cluster"
+}
+
+# Admin password for the VMSS instances. SSH is denied from the internet by the
+# cluster NSG and nodes have no public IP (NAT egress only).
+# TODO(azure-hardening): move to admin_ssh_key.
+resource "random_password" "vm_admin" {
+  length           = 24
+  special          = true
+  override_special = "!#%*()-_=+"
+  min_lower        = 2
+  min_upper        = 2
+  min_numeric      = 2
+  min_special      = 2
+}
+
+# Upload the Consul/Nomad runner scripts to the setup Blob container. Nodes pull
+# them at boot via the Managed Identity (replaces the AWS aws_s3_object + s3 cp).
+resource "azurerm_storage_blob" "setup_config" {
+  for_each = local.setup_files
+
+  name                   = "${each.value}-${local.setup_files_hash[each.value]}.sh"
+  storage_account_name   = var.storage_account_name
+  storage_container_name = var.setup_container_name
+  type                   = "Block"
+  source                 = "${path.module}/${each.key}"
+}
+
+# ---
+# Nodepool modules
+# ---
+
+module "control_server" {
+  source = "../modules/nodepool-control-server"
+
+  prefix              = var.prefix
+  resource_group_name = var.resource_group_name
+  location            = var.location
+
+  identity_id        = var.identity_id
+  identity_client_id = var.identity_client_id
+  subnet_id          = var.cluster_subnet_id
+
+  cluster_tag_name  = local.cluster_tag_name
+  cluster_tag_value = local.cluster_tag_value
+
+  storage_account_name = var.storage_account_name
+  setup_container_name = var.setup_container_name
+  setup_files_hash     = local.setup_files_hash
+
+  image_id     = var.control_server_image_id
+  cluster_size = var.control_server_cluster_size
+  machine_type = var.control_server_machine_type
+
+  admin_username = var.admin_username
+  admin_password = random_password.vm_admin.result
+
+  nomad_acl_token              = var.nomad_acl_token_secret
+  consul_acl_token             = var.consul_acl_token_secret
+  consul_gossip_encryption_key = var.consul_gossip_encryption_key
+
+  tags = var.tags
+}
+
+module "api" {
+  source = "../modules/nodepool-api"
+
+  prefix              = var.prefix
+  resource_group_name = var.resource_group_name
+  location            = var.location
+
+  identity_id         = var.identity_id
+  identity_client_id  = var.identity_client_id
+  subnet_id           = var.cluster_subnet_id
+  lb_backend_pool_ids = var.api_lb_backend_pool_ids
+
+  cluster_tag_name  = local.cluster_tag_name
+  cluster_tag_value = local.cluster_tag_value
+
+  storage_account_name = var.storage_account_name
+  setup_container_name = var.setup_container_name
+  setup_files_hash     = local.setup_files_hash
+
+  image_id     = var.api_image_id
+  cluster_size = var.api_cluster_size
+  machine_type = var.api_machine_type
+
+  admin_username = var.admin_username
+  admin_password = random_password.vm_admin.result
+
+  node_pool_name               = var.api_node_pool_name
+  consul_acl_token             = var.consul_acl_token_secret
+  consul_gossip_encryption_key = var.consul_gossip_encryption_key
+  consul_dns_request_token     = var.consul_dns_request_token_secret
+
+  acr_login_server = var.acr_login_server
+
+  tags = var.tags
+}
+
+module "clickhouse" {
+  source = "../modules/nodepool-clickhouse"
+
+  prefix              = var.prefix
+  resource_group_name = var.resource_group_name
+  location            = var.location
+
+  identity_id        = var.identity_id
+  identity_client_id = var.identity_client_id
+  subnet_id          = var.cluster_subnet_id
+
+  cluster_tag_name  = local.cluster_tag_name
+  cluster_tag_value = local.cluster_tag_value
+
+  storage_account_name = var.storage_account_name
+  setup_container_name = var.setup_container_name
+  setup_files_hash     = local.setup_files_hash
+
+  image_id     = var.clickhouse_image_id
+  cluster_size = var.clickhouse_cluster_size
+  machine_type = var.clickhouse_machine_type
+
+  admin_username = var.admin_username
+  admin_password = random_password.vm_admin.result
+
+  node_pool_name               = var.clickhouse_node_pool_name
+  job_constraint_prefix        = var.clickhouse_job_constraint_prefix
+  consul_acl_token             = var.consul_acl_token_secret
+  consul_gossip_encryption_key = var.consul_gossip_encryption_key
+  consul_dns_request_token     = var.consul_dns_request_token_secret
+
+  acr_login_server = var.acr_login_server
+
+  tags = var.tags
+}
+
+module "build" {
+  source = "../modules/nodepool-client"
+
+  name                = "orch-build"
+  prefix              = var.prefix
+  resource_group_name = var.resource_group_name
+  location            = var.location
+
+  identity_id        = var.identity_id
+  identity_client_id = var.identity_client_id
+  subnet_id          = var.cluster_subnet_id
+
+  cluster_tag_name  = local.cluster_tag_name
+  cluster_tag_value = local.cluster_tag_value
+
+  storage_account_name = var.storage_account_name
+  setup_container_name = var.setup_container_name
+  setup_files_hash     = local.setup_files_hash
+
+  image_id      = var.build_image_id
+  cluster_size  = var.build_cluster_size
+  machine_type  = var.build_machine_type
+  max_instances = var.build_max_instances
+
+  admin_username = var.admin_username
+  admin_password = random_password.vm_admin.result
+
+  node_pool_name        = var.build_node_pool_name
+  node_labels           = var.build_node_labels
+  nested_virtualization = var.build_server_nested_virtualization
+
+  nomad_acl_token              = var.nomad_acl_token_secret
+  consul_acl_token             = var.consul_acl_token_secret
+  consul_gossip_encryption_key = var.consul_gossip_encryption_key
+  consul_dns_request_token     = var.consul_dns_request_token_secret
+
+  acr_login_server = var.acr_login_server
+
+  fc_env_pipeline_container_name = var.fc_env_pipeline_container_name
+  fc_kernels_container_name      = var.fc_kernels_container_name
+  fc_versions_container_name     = var.fc_versions_container_name
+  fc_busybox_container_name      = var.fc_busybox_container_name
+
+  tags = var.tags
+}
+
+module "client" {
+  source = "../modules/nodepool-client"
+
+  name                = "orch-client"
+  prefix              = var.prefix
+  resource_group_name = var.resource_group_name
+  location            = var.location
+
+  identity_id         = var.identity_id
+  identity_client_id  = var.identity_client_id
+  subnet_id           = var.cluster_subnet_id
+  lb_backend_pool_ids = var.client_lb_backend_pool_ids
+
+  cluster_tag_name  = local.cluster_tag_name
+  cluster_tag_value = local.cluster_tag_value
+
+  storage_account_name = var.storage_account_name
+  setup_container_name = var.setup_container_name
+  setup_files_hash     = local.setup_files_hash
+
+  image_id                  = var.client_image_id
+  cluster_size              = var.client_cluster_size
+  machine_type              = var.client_machine_type
+  max_instances             = var.client_max_instances
+  base_hugepages_percentage = var.client_base_hugepages_percentage
+
+  admin_username = var.admin_username
+  admin_password = random_password.vm_admin.result
+
+  node_pool_name        = var.client_node_pool_name
+  node_labels           = var.client_node_labels
+  nested_virtualization = var.client_server_nested_virtualization
+
+  nomad_acl_token              = var.nomad_acl_token_secret
+  consul_acl_token             = var.consul_acl_token_secret
+  consul_gossip_encryption_key = var.consul_gossip_encryption_key
+  consul_dns_request_token     = var.consul_dns_request_token_secret
+
+  acr_login_server = var.acr_login_server
+
+  fc_env_pipeline_container_name = var.fc_env_pipeline_container_name
+  fc_kernels_container_name      = var.fc_kernels_container_name
+  fc_versions_container_name     = var.fc_versions_container_name
+  fc_busybox_container_name      = var.fc_busybox_container_name
+
+  tags = var.tags
+}

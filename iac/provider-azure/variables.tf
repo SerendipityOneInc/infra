@@ -178,6 +178,65 @@ variable "auth_db_min_idle_connections" {
 # up even though the compute plane (nomad-cluster) is a later chunk. Defaults use
 # Azure VM SKUs; the client/build SKUs are nested-virtualization-capable.
 # ---
+# Packer-built Gen2 image (Shared Image Gallery version id or managed image id).
+# Common default for every pool; per-pool overrides below take precedence. Empty
+# means the nodepool modules fall back to an Ubuntu Gen2 marketplace image so the
+# stack validates/bootstraps before the Packer chunk lands.
+variable "cluster_image_id" {
+  type        = string
+  description = "Resource id of the Packer-built Gen2 image used by all node pools unless a per-pool override is set."
+  default     = ""
+}
+
+variable "control_server_image_id" {
+  type    = string
+  default = ""
+}
+
+variable "api_image_id" {
+  type    = string
+  default = ""
+}
+
+variable "client_image_id" {
+  type    = string
+  default = ""
+}
+
+variable "build_image_id" {
+  type    = string
+  default = ""
+}
+
+variable "clickhouse_image_id" {
+  type    = string
+  default = ""
+}
+
+variable "client_node_labels" {
+  type        = list(string)
+  description = "Scheduling labels applied to client (Firecracker host) nodes."
+  default     = []
+}
+
+variable "build_node_labels" {
+  type        = list(string)
+  description = "Scheduling labels applied to build (template-manager) nodes."
+  default     = []
+}
+
+variable "client_max_instances" {
+  type        = number
+  description = "Autoscale ceiling for the client pool. null keeps it fixed at client_cluster_size."
+  default     = null
+}
+
+variable "build_max_instances" {
+  type        = number
+  description = "Autoscale ceiling for the build pool. null keeps it fixed at build_cluster_size."
+  default     = null
+}
+
 variable "control_server_cluster_size" {
   type    = number
   default = 3
