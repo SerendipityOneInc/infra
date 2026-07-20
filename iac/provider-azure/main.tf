@@ -93,6 +93,13 @@ module "network" {
   resource_group_name = azurerm_resource_group.main.name
   location            = var.location
 
+  # Co-locate on an existing VNet (e.g. the shared zooclaw-dev-vnet) to reach the
+  # private-endpoint Postgres + JuiceFS meta directly; empty = dedicated VNet.
+  existing_vnet_name           = var.existing_vnet_name
+  existing_vnet_resource_group = var.existing_vnet_resource_group
+  cluster_subnet_cidr          = var.cluster_subnet_cidr
+  services_subnet_cidr         = var.services_subnet_cidr
+
   tags = var.tags
 }
 

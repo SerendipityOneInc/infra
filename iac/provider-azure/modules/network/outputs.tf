@@ -2,11 +2,11 @@
 # Virtual network
 # ---
 output "vnet_id" {
-  value = azurerm_virtual_network.main.id
+  value = local.vnet_id
 }
 
 output "vnet_name" {
-  value = azurerm_virtual_network.main.name
+  value = local.vnet_name
 }
 
 # ---

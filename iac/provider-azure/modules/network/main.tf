@@ -17,7 +17,25 @@ terraform {
 # all host/path routing. Cloudflare provides edge WAF/DDoS/TLS.
 # ============================================================================
 
+# When existing_vnet_name is set, ADD our subnets to that VNet instead of
+# creating a new one — used to co-locate the e2b cluster on the shared
+# zooclaw-dev-vnet so it reaches the private-endpoint Postgres and JuiceFS meta
+# directly (no peering / DNS-link). Otherwise stand up a dedicated VNet.
+locals {
+  reuse_vnet = var.existing_vnet_name != ""
+  vnet_rg    = local.reuse_vnet ? var.existing_vnet_resource_group : var.resource_group_name
+  vnet_name  = local.reuse_vnet ? var.existing_vnet_name : azurerm_virtual_network.main[0].name
+  vnet_id    = local.reuse_vnet ? data.azurerm_virtual_network.existing[0].id : azurerm_virtual_network.main[0].id
+}
+
+data "azurerm_virtual_network" "existing" {
+  count               = local.reuse_vnet ? 1 : 0
+  name                = var.existing_vnet_name
+  resource_group_name = var.existing_vnet_resource_group
+}
+
 resource "azurerm_virtual_network" "main" {
+  count               = local.reuse_vnet ? 0 : 1
   name                = "${var.prefix}vnet"
   resource_group_name = var.resource_group_name
   location            = var.location
@@ -30,16 +48,16 @@ resource "azurerm_virtual_network" "main" {
 # the L4 LB live here.
 resource "azurerm_subnet" "cluster" {
   name                 = "${var.prefix}cluster"
-  resource_group_name  = var.resource_group_name
-  virtual_network_name = azurerm_virtual_network.main.name
+  resource_group_name  = local.vnet_rg
+  virtual_network_name = local.vnet_name
   address_prefixes     = [var.cluster_subnet_cidr]
 }
 
 # Auxiliary services (private endpoints, databases, etc.).
 resource "azurerm_subnet" "services" {
   name                 = "${var.prefix}services"
-  resource_group_name  = var.resource_group_name
-  virtual_network_name = azurerm_virtual_network.main.name
+  resource_group_name  = local.vnet_rg
+  virtual_network_name = local.vnet_name
   address_prefixes     = [var.services_subnet_cidr]
 }
 

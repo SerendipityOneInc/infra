@@ -23,9 +23,21 @@ variable "tags" {
 # ---
 # Address space
 # ---
+variable "existing_vnet_name" {
+  type        = string
+  description = "Name of an existing VNet to add the e2b subnets to (co-locate on a shared VNet to reach private-endpoint services). Empty = create a dedicated VNet from vnet_address_space."
+  default     = ""
+}
+
+variable "existing_vnet_resource_group" {
+  type        = string
+  description = "Resource group of existing_vnet_name (may differ from the e2b resource group). Ignored when existing_vnet_name is empty."
+  default     = ""
+}
+
 variable "vnet_address_space" {
   type        = list(string)
-  description = "CIDR block(s) for the virtual network"
+  description = "CIDR block(s) for the virtual network (only used when existing_vnet_name is empty)"
   default     = ["10.0.0.0/16"]
 }
 

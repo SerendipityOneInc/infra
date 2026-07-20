@@ -341,3 +341,28 @@ variable "client_proxy_count" {
   default = 1
 }
 
+
+# --- Network reuse (Phase C: co-locate on the shared zooclaw-dev-vnet) --------
+variable "existing_vnet_name" {
+  type        = string
+  description = "Existing VNet to add e2b subnets to (reach private-endpoint PG + JuiceFS). Empty = dedicated VNet."
+  default     = ""
+}
+
+variable "existing_vnet_resource_group" {
+  type        = string
+  description = "Resource group of existing_vnet_name."
+  default     = ""
+}
+
+variable "cluster_subnet_cidr" {
+  type        = string
+  description = "CIDR for the e2b cluster subnet."
+  default     = "10.0.0.0/20"
+}
+
+variable "services_subnet_cidr" {
+  type        = string
+  description = "CIDR for the e2b auxiliary services subnet."
+  default     = "10.0.16.0/20"
+}
