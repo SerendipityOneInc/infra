@@ -266,8 +266,7 @@ AZURE_DNS="168.63.129.16"
 
 /opt/consul/bin/run-consul.sh --client \
   --consul-token "${CONSUL_TOKEN}" \
-  --cluster-tag-name "${CLUSTER_TAG_NAME}" \
-  --cluster-tag-value "${CLUSTER_TAG_VALUE}" \
+  --server-scale-set-name "${SERVER_SCALE_SET_NAME}" \
   --enable-gossip-encryption \
   --gossip-encryption-key "${CONSUL_GOSSIP_ENCRYPTION_KEY}" \
   --dns-request-token "${CONSUL_DNS_REQUEST_TOKEN}" \

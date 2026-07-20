@@ -39,3 +39,19 @@ resource "azurerm_role_assignment" "instances_kv_secrets_user" {
   principal_id         = azurerm_user_assigned_identity.infra_instances.principal_id
 }
 
+# Consul/Nomad Azure cloud auto-join enumerates the SERVER VMSS instances'
+# network interfaces to discover peers (resource_group + vm_scale_set mode).
+# That requires Microsoft.Compute/virtualMachineScaleSets/networkInterfaces/read,
+# which the built-in Reader role grants. Scoped to the resource group, which is
+# dedicated to this e2b stack. Without this the identity gets 403 AuthorizationFailed
+# and Consul never forms quorum (so Nomad never starts).
+data "azurerm_resource_group" "this" {
+  name = var.resource_group_name
+}
+
+resource "azurerm_role_assignment" "instances_reader" {
+  scope                = data.azurerm_resource_group.this.id
+  role_definition_name = "Reader"
+  principal_id         = azurerm_user_assigned_identity.infra_instances.principal_id
+}
+

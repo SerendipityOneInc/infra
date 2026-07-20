@@ -15,8 +15,7 @@ locals {
 
   user_data = templatefile("${local.scripts_path}/start-client.sh", {
     NODE_POOL                         = var.node_pool_name
-    CLUSTER_TAG_NAME                  = var.cluster_tag_name
-    CLUSTER_TAG_VALUE                 = var.cluster_tag_value
+    SERVER_SCALE_SET_NAME             = "${var.prefix}control-server"
     NODE_LABELS                       = join(",", var.node_labels)
     BASE_HUGEPAGES_PERCENTAGE         = var.base_hugepages_percentage
     SET_ORCHESTRATOR_VERSION_METADATA = var.set_orchestrator_version_metadata ? "true" : "false"

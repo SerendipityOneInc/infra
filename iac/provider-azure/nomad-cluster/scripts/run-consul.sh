@@ -61,14 +61,13 @@ function generate_consul_config {
   local -r consul_token="${2}"
   local -r config_dir="${3}"
   local -r user="${4}"
-  local -r cluster_tag_name="${5}"
-  local -r cluster_tag_value="${6}"
-  local -r datacenter="${7}"
-  local -r enable_gossip_encryption="${8}"
-  local -r gossip_encryption_key="${9}"
+  local -r server_scale_set_name="${5}"
+  local -r datacenter="${6}"
+  local -r enable_gossip_encryption="${7}"
+  local -r gossip_encryption_key="${8}"
   local -r config_path="$config_dir/$CONSUL_CONFIG_FILE"
 
-  shift 9
+  shift 8
   local -ar recursors=("$@")
 
   local instance_name instance_ip_address subscription_id resource_group
@@ -77,13 +76,18 @@ function generate_consul_config {
   subscription_id=$(get_subscription_id)
   resource_group=$(get_resource_group)
 
-  # Consul Azure cloud auto-join.
+  # Consul Azure cloud auto-join. Every pool (servers and clients alike)
+  # discovers the Nomad/Consul SERVER VMSS instances by scale-set name. Azure
+  # VMSS instance NICs do NOT carry the VMSS tags, so go-discover's tag mode
+  # cannot see them — we must use resource_group + vm_scale_set. Auth is the
+  # attached user-assigned managed identity, which needs Reader over the scope
+  # (Microsoft.Compute/virtualMachineScaleSets/networkInterfaces/read).
   # https://developer.hashicorp.com/consul/docs/install/cloud-auto-join#microsoft-azure
   local retry_join_json=""
-  if [[ -z "$cluster_tag_name" ]] || [[ -z "$cluster_tag_value" ]]; then
-    log_warn "cluster tag name/value empty; skipping auto-join."
+  if [[ -z "$server_scale_set_name" ]]; then
+    log_warn "server scale set name empty; skipping auto-join."
   else
-    retry_join_json="\"retry_join\": [\"provider=azure tag_name=$cluster_tag_name tag_value=$cluster_tag_value subscription_id=$subscription_id resource_group=$resource_group\"],"
+    retry_join_json="\"retry_join\": [\"provider=azure subscription_id=$subscription_id resource_group=$resource_group vm_scale_set=$server_scale_set_name\"],"
   fi
 
   local recursors_config=""
@@ -257,8 +261,7 @@ function run {
   local data_dir=""
   local bin_dir=""
   local user=""
-  local cluster_tag_name=""
-  local cluster_tag_value=""
+  local server_scale_set_name=""
   local datacenter=""
   local enable_gossip_encryption="false"
   local gossip_encryption_key=""
@@ -276,14 +279,9 @@ function run {
       consul_token="$2"
       shift
       ;;
-    --cluster-tag-name)
+    --server-scale-set-name)
       assert_not_empty "$key" "$2"
-      cluster_tag_name="$2"
-      shift
-      ;;
-    --cluster-tag-value)
-      assert_not_empty "$key" "$2"
-      cluster_tag_value="$2"
+      server_scale_set_name="$2"
       shift
       ;;
     --datacenter)
@@ -347,7 +345,7 @@ function run {
   [[ -z "$datacenter" ]] && datacenter=$(get_instance_location)
 
   generate_consul_config "$server" "$consul_token" "$config_dir" "$user" \
-    "$cluster_tag_name" "$cluster_tag_value" "$datacenter" \
+    "$server_scale_set_name" "$datacenter" \
     "$enable_gossip_encryption" "$gossip_encryption_key" "${recursors[@]}"
 
   generate_systemd_config "$SYSTEMD_CONFIG_PATH" "$config_dir" "$data_dir" "$bin_dir" "$user"

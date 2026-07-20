@@ -12,8 +12,7 @@ locals {
 
   user_data = templatefile("${local.scripts_path}/start-server.sh", {
     NUM_SERVERS                  = var.cluster_size
-    CLUSTER_TAG_NAME             = var.cluster_tag_name
-    CLUSTER_TAG_VALUE            = var.cluster_tag_value
+    SERVER_SCALE_SET_NAME        = "${var.prefix}control-server"
     STORAGE_ACCOUNT              = var.storage_account_name
     SETUP_CONTAINER              = var.setup_container_name
     IDENTITY_CLIENT_ID           = var.identity_client_id
