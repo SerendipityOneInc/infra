@@ -31,6 +31,12 @@ ifeq ($(ENVD_UPLOAD_MODE),versioned)
 else
 	aws s3 cp ./bin/envd "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/envd" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
 endif
+else ifeq ($(PROVIDER),azure)
+ifeq ($(ENVD_UPLOAD_MODE),versioned)
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name envd.$(BUILD) --file ./bin/envd
+else
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name envd --file ./bin/envd
+endif
 else
 ifeq ($(ENVD_UPLOAD_MODE),versioned)
 	gsutil -h "Cache-Control:no-cache, max-age=0" cp bin/envd "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/envd.$(BUILD)"
@@ -45,6 +51,8 @@ promote:
 	$(eval ENVD_COMMIT_SHA_SHORT := $(shell printf '%.7s' "$(ENVD_COMMIT_SHA)"))
 ifeq ($(PROVIDER),aws)
 	aws s3 cp "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/envd.$(ENVD_COMMIT_SHA_SHORT)" "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/envd" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
+else ifeq ($(PROVIDER),azure)
+	az storage blob copy start --account-name $(AZURE_STORAGE_ACCOUNT) --destination-container fc-env-pipeline --destination-blob envd --source-container fc-env-pipeline --source-blob envd.$(ENVD_COMMIT_SHA_SHORT) --auth-mode login
 else
 	gsutil -h "Cache-Control:no-cache, max-age=0" cp "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/envd.$(ENVD_COMMIT_SHA_SHORT)" "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/envd"
 endif

@@ -94,6 +94,9 @@ upload/clean-nfs-cache:
 ifeq ($(PROVIDER),aws)
 	aws s3 cp ./bin/clean-nfs-cache "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/clean-nfs-cache" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
 	aws s3 cp ./bin/clean-nfs-cache "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/clean-nfs-cache.$(COMMIT_SHA)" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
+else ifeq ($(PROVIDER),azure)
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name clean-nfs-cache --file ./bin/clean-nfs-cache
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name clean-nfs-cache.$(COMMIT_SHA) --file ./bin/clean-nfs-cache
 else
 	gcloud storage cp --cache-control="no-cache, max-age=0" ./bin/clean-nfs-cache "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/clean-nfs-cache"
 	gcloud storage cp --cache-control="no-cache, max-age=0" ./bin/clean-nfs-cache "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/clean-nfs-cache.$(COMMIT_SHA)"
@@ -104,6 +107,9 @@ upload/orchestrator:
 	chmod +x ./bin/orchestrator
 ifeq ($(PROVIDER),aws)
 	aws s3 cp ./bin/orchestrator "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/orchestrator" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
+else ifeq ($(PROVIDER),azure)
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name orchestrator --file ./bin/orchestrator
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name orchestrator.$(COMMIT_SHA) --file ./bin/orchestrator
 else
 	gsutil -h "Cache-Control:no-cache, max-age=0" cp ./bin/orchestrator "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/orchestrator"
 endif
@@ -115,6 +121,9 @@ upload/template-manager:
 ifeq ($(PROVIDER),aws)
 	aws s3 cp ./bin/orchestrator "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/template-manager" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
 	aws s3 cp ./bin/orchestrator "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/template-manager.$(COMMIT_SHA)" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
+else ifeq ($(PROVIDER),azure)
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name template-manager --file ./bin/orchestrator
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name template-manager.$(COMMIT_SHA) --file ./bin/orchestrator
 else
 	gcloud storage cp --cache-control="no-cache, max-age=0" ./bin/orchestrator "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/template-manager"
 	gcloud storage cp --cache-control="no-cache, max-age=0" ./bin/orchestrator "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/template-manager.$(COMMIT_SHA)"

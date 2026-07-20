@@ -34,6 +34,11 @@ ifeq ($(PROVIDER),aws)
 	aws s3 cp $(BINARY) "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/nomad-nodepool-apm.$(COMMIT_SHA)" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
 	aws s3 cp $(TARGET_BINARY) "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/nomad-deployment-aware-target" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
 	aws s3 cp $(TARGET_BINARY) "s3://${AWS_BUCKET_PREFIX}fc-env-pipeline/nomad-deployment-aware-target.$(COMMIT_SHA)" --profile ${AWS_PROFILE} --cache-control "no-cache, max-age=0"
+else ifeq ($(PROVIDER),azure)
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name nomad-nodepool-apm --file $(BINARY)
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name nomad-nodepool-apm.$(COMMIT_SHA) --file $(BINARY)
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name nomad-deployment-aware-target --file $(TARGET_BINARY)
+	az storage blob upload --account-name $(AZURE_STORAGE_ACCOUNT) --container-name fc-env-pipeline --auth-mode login --overwrite --name nomad-deployment-aware-target.$(COMMIT_SHA) --file $(TARGET_BINARY)
 else
 	gcloud storage cp --cache-control="no-cache, max-age=0" $(BINARY) "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/nomad-nodepool-apm"
 	gcloud storage cp --cache-control="no-cache, max-age=0" $(BINARY) "gs://${GCP_BUCKET_PREFIX}fc-env-pipeline/nomad-nodepool-apm.$(COMMIT_SHA)"
