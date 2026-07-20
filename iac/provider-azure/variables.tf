@@ -366,3 +366,22 @@ variable "services_subnet_cidr" {
   description = "CIDR for the e2b auxiliary services subnet."
   default     = "10.0.16.0/20"
 }
+
+# --- Reuse the base-infra Postgres Flexible Server (create the e2b DB on it) ---
+variable "existing_pg_server_name" {
+  type        = string
+  description = "Existing Postgres Flexible Server (from azure-foundation) to create the e2b database on. Empty = don't manage a database."
+  default     = ""
+}
+
+variable "existing_pg_resource_group" {
+  type        = string
+  description = "Resource group of existing_pg_server_name."
+  default     = ""
+}
+
+variable "e2b_database_name" {
+  type        = string
+  description = "Name of the database e2b creates on the existing Postgres server."
+  default     = "e2b"
+}
