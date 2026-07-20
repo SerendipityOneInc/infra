@@ -116,14 +116,17 @@ locals {
 }
 
 locals {
-  redis_port          = 6379
-  ingress_port        = 8080
-  nomad_port          = 4646
-  clickhouse_port     = 9000
-  clickhouse_database = "default"
-  loki_port           = 3100
-  logs_proxy_port     = 30006
-  otel_collector_port = 4317
+  redis_port            = 6379
+  ingress_port          = 8080
+  ingress_internal_port = 9435
+  nomad_port            = 4646
+  clickhouse_port       = 9000
+  clickhouse_database   = "default"
+  loki_port             = 3100
+  logs_proxy_port       = 30006
+  otel_collector_port   = 4317
+  template_manager_port = 5008
+  api_port              = 80
 
   auth_provider_config = {
     jwt = []
@@ -302,17 +305,70 @@ module "cluster" {
 }
 
 # ----------------------------------------------------------------------------
-# TODO(azure): Nomad jobspecs live at ./nomad (mirrors provider-aws/nomad) and
-# are the next chunk. They consume the local.*_env_vars maps defined above.
-#
-# module "nomad" {
-#   source = "./nomad"
-#   ...
-#   api_env_vars              = local.api_env_vars
-#   api_db_migrator_env_vars  = local.api_db_migrator_env_vars
-#   client_proxy_env_vars     = local.client_proxy_env_vars
-#   orchestrator_env_vars     = local.orchestrator_env_vars
-#   template_manager_env_vars = local.template_manager_env_vars
-# }
+# Nomad jobspecs (mirrors provider-aws/nomad). Renders the shared iac/modules/
+# job-* modules with Azure inputs: ACR image refs, the local.*_env_vars maps,
+# and https:: artifact sources (SAS-authed Blob) for the raw Go binaries.
 # ----------------------------------------------------------------------------
+
+module "nomad" {
+  source = "./nomad"
+
+  domain_name         = var.domain_name
+  environment         = var.environment
+  resource_group_name = azurerm_resource_group.main.name
+
+  nomad_acl_token  = module.init.cluster.nomad_acl_token
+  consul_acl_token = module.init.cluster.consul_acl_token
+
+  api_node_pool          = local.api_pool_name
+  orchestrator_node_pool = local.client_pool_name
+  build_node_pool        = local.build_pool_name
+
+  api_cluster_size   = var.api_cluster_size
+  build_cluster_size = var.build_cluster_size
+
+  # Artifact delivery (raw Go binaries over SAS-authed HTTPS).
+  storage_account_name           = module.init.storage_account_name
+  fc_env_pipeline_container_name = module.init.fc_env_pipeline_container_name
+  commit_sha                     = var.commit_sha
+
+  # ACR image refs.
+  acr_login_server             = module.init.acr_login_server
+  image_tag                    = var.image_tag
+  api_repository_name          = module.init.api_repository_name
+  db_migrator_repository_name  = module.init.db_migrator_repository_name
+  client_proxy_repository_name = module.init.client_proxy_repository_name
+
+  # Ingress.
+  ingress_count         = var.ingress_count
+  ingress_port          = local.ingress_port
+  ingress_internal_port = local.ingress_internal_port
+  traefik_config_files  = var.traefik_config_files
+
+  # API.
+  api_port                 = local.api_port
+  api_internal_grpc_port   = var.api_internal_grpc_port
+  api_env_vars             = local.api_env_vars
+  api_db_migrator_env_vars = local.api_db_migrator_env_vars
+
+  # Client proxy.
+  client_proxy_count    = var.client_proxy_count
+  client_proxy_env_vars = local.client_proxy_env_vars
+
+  # Orchestrator.
+  orchestrator_port       = var.orchestrator_port
+  orchestrator_proxy_port = var.orchestrator_proxy_port
+  orchestrator_env_vars   = local.orchestrator_env_vars
+
+  # Template manager.
+  template_manager_port     = local.template_manager_port
+  template_manager_env_vars = local.template_manager_env_vars
+
+  # Redis.
+  redis_managed = var.redis_managed
+  redis_port    = local.redis_port
+
+  # Telemetry.
+  otel_collector_grpc_port = local.otel_collector_port
+}
 

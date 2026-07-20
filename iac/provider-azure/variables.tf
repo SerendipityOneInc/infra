@@ -82,6 +82,35 @@ variable "remote_repository_enabled" {
   default     = false
 }
 
+variable "commit_sha" {
+  type        = string
+  description = <<-EOT
+    Short git commit SHA identifying the raw Go binaries (orchestrator,
+    template-manager, nomad-nodepool-apm) to pull from the fc-env-pipeline Blob
+    container. e2b uploads a per-SHA copy of each binary; the Nomad artifact
+    source references the "<name>.<commit_sha>" blob so a redeploy re-pulls only
+    when the SHA changes (mirrors AWS etag / GCP generation).
+  EOT
+}
+
+variable "image_tag" {
+  type        = string
+  description = "ACR image tag deployed for the api/db-migrator/client-proxy containers. Defaults to :latest; override to pin a commit SHA."
+  default     = "latest"
+}
+
+variable "redis_managed" {
+  type        = bool
+  description = "When true, use a managed Redis (Azure Cache) and do not schedule the in-cluster redis Nomad job."
+  default     = true
+}
+
+variable "traefik_config_files" {
+  type        = map(string)
+  description = "Map of filename => content for additional Traefik dynamic configuration files rendered into the ingress job."
+  default     = {}
+}
+
 variable "tags" {
   type        = map(string)
   description = "Tags to attach to resources created by this deployment"
