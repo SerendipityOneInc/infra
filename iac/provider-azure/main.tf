@@ -257,7 +257,7 @@ locals {
     # backend (only GCP_ARTIFACTS / AWS_ECR / Local). This value is a placeholder
     # for when that lands and is threaded once module.nomad is implemented.
     ARTIFACTS_REGISTRY_PROVIDER  = "AZURE_ACR"
-    AZURE_ACR_LOGIN_SERVER       = module.init.acr_login_server
+    AZURE_CONTAINER_REGISTRY     = module.init.acr_login_server
     AZURE_DOCKER_REPOSITORY_NAME = module.init.custom_environments_repository_name
   }, var.orchestrator_env_vars)
 
@@ -267,7 +267,7 @@ locals {
     STORAGE_PROVIDER             = "AzureBucket"
     AZURE_STORAGE_ACCOUNT        = module.init.storage_account_name
     AZURE_CLIENT_ID              = module.init.identity_client_id
-    AZURE_ACR_LOGIN_SERVER       = module.init.acr_login_server
+    AZURE_CONTAINER_REGISTRY     = module.init.acr_login_server
     AZURE_DOCKER_REPOSITORY_NAME = module.init.custom_environments_repository_name
     API_SECRET                   = module.init.api_secret
     ENVIRONMENT                  = var.environment
