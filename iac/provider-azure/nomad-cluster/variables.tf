@@ -127,7 +127,7 @@ variable "api_image_id" {
   default = ""
 }
 
-variable "api_lb_backend_pool_ids" {
+variable "api_appgw_backend_pool_ids" {
   type    = list(string)
   default = []
 }

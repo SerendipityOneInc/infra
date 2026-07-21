@@ -22,9 +22,10 @@ variable "subnet_id" {
   type = string
 }
 
-variable "lb_backend_pool_ids" {
-  type    = list(string)
-  default = []
+variable "appgw_backend_pool_ids" {
+  type        = list(string)
+  description = "App Gateway backend pools the api VMSS joins. The client-proxy (ingress) + api gRPC run on this pool, so it backs the ingress + grpc App Gateway pools."
+  default     = []
 }
 
 variable "cluster_tag_name" {

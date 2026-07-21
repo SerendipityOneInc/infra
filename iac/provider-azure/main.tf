@@ -300,11 +300,15 @@ module "cluster" {
   identity_client_id = module.init.identity_client_id
 
   cluster_subnet_id = module.network.cluster_subnet_id
-  # The client pool (client-proxy ingress) and the control-server pool (Nomad
-  # server) each join their App Gateway backend pool. The gateway host-routes
-  # nomad.<domain> straight to the server pool on 4646, and everything else to
-  # the client-proxy ingress pool.
-  client_appgw_backend_pool_ids = [module.network.ingress_backend_pool_id]
+  # App Gateway host-routing backends (mirrors GCP, where the ingress + grpc
+  # backend services target the api instance group):
+  #   * nomad.<domain>    -> control-server pool (Nomad servers) on 4646
+  #   * grpc-api.<domain> -> api pool (gRPC)
+  #   * everything else   -> api pool (the client-proxy/ingress runs on the api
+  #     node pool; it reaches sandboxes on the orch client pool internally, so the
+  #     orch client/build pools are NOT App Gateway backends).
+  api_appgw_backend_pool_ids    = [module.network.ingress_backend_pool_id, module.network.grpc_backend_pool_id]
+  client_appgw_backend_pool_ids = []
   server_appgw_backend_pool_ids = [module.network.nomad_backend_pool_id]
 
   nomad_acl_token_secret          = module.init.cluster.nomad_acl_token

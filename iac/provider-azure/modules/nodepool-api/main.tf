@@ -72,10 +72,10 @@ resource "azurerm_linux_virtual_machine_scale_set" "api" {
     primary = true
 
     ip_configuration {
-      name                                   = "primary"
-      primary                                = true
-      subnet_id                              = var.subnet_id
-      load_balancer_backend_address_pool_ids = var.lb_backend_pool_ids
+      name                                         = "primary"
+      primary                                      = true
+      subnet_id                                    = var.subnet_id
+      application_gateway_backend_address_pool_ids = var.appgw_backend_pool_ids
     }
   }
 
