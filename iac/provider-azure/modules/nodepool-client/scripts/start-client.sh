@@ -67,6 +67,27 @@ else
   exit 1
 fi
 
+# Azure ships the ephemeral/resource disk pre-partitioned with a filesystem that
+# a boot-time claim (the Azure datasource's ephemeral-disk handling) holds open
+# exclusively, so the whole disk cannot be reformatted in-place: mkfs/wipefs/
+# partprobe all fail with EBUSY and partx -d cannot drop the partition. Zero the
+# partition table (dd needs no O_EXCL) and re-provision from a clean boot, where
+# the kernel sees no partition to claim. The wiped table persists across the
+# reboot, so the second pass finds a bare disk, skips this block, and formats
+# cleanly (the emptied partition table is the loop guard — no reboot loop).
+if lsblk -lno NAME "$DISK" | tail -n +2 | grep -q .; then
+  echo "$DISK is pre-partitioned and held by a boot-time claim; wiping the partition table and rebooting to re-provision on a clean disk"
+  for part in $(lsblk -lno NAME "$DISK" | tail -n +2); do
+    umount "/dev/$part" 2>/dev/null || true
+    swapoff "/dev/$part" 2>/dev/null || true
+  done
+  dd if=/dev/zero of="$DISK" bs=1M count=10 conv=fsync 2>/dev/null || true
+  cloud-init clean --logs || true
+  reboot
+  sleep 120
+  exit 0
+fi
+
 until mkfs.xfs -f -b size=4096 "$DISK"; do
   echo "failed to make file system, retrying ..."
   sleep 1
