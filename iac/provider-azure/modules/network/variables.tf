@@ -70,6 +70,12 @@ variable "ingress_http_port" {
   default     = 80
 }
 
+variable "ingress_backend_port" {
+  type        = number
+  description = "TCP port the in-cluster Traefik ingress entrypoint listens on (job-ingress ingress_port). The App Gateway forwards the default (api./sandbox/docker.) + grpc-api. traffic here; Traefik then does dynamic host-based routing (api service, sandboxes via Consul catalog). Traefik serves /ping on this port for the health probe. Must equal local.ingress_port in provider-azure/main.tf."
+  default     = 8080
+}
+
 # ---
 # Load balancer health probe. Mirrors the AWS ALB target-group health check
 # (path /ping) and the GCP client-proxy health check.

@@ -37,20 +37,9 @@ az storage blob download --account-name "${STORAGE_ACCOUNT}" --container-name "$
 
 chmod +x /opt/consul/bin/run-consul.sh /opt/nomad/bin/run-nomad.sh
 
-# Docker auth for ACR. Nomad's docker driver reads /root/docker/config.json.
-# We point the ACR login server at the `acr-env` credential helper, which uses
-# the VM's Managed Identity to mint short-lived pull tokens.
-# TODO(azure-acr): `docker-credential-acr-env` must be baked into the Packer
-# image (mirrors the AWS ecr-login helper dependency). Verify at build time.
-mkdir -p /root/docker
-cat <<EOF >/root/docker/config.json
-{
-    "credHelpers": {
-        "${ACR_LOGIN_SERVER}": "acr-env"
-    }
-}
-EOF
-
+# ACR docker auth is set up by run-nomad.sh (--acr-login-server below): it mints
+# a static auth from the MSI-backed acr-env helper + installs a refresh timer.
+# Nomad's docker driver only honours static auths, not credential helpers.
 mkdir -p /etc/systemd/resolved.conf.d/
 cat <<EOF >/etc/systemd/resolved.conf.d/consul.conf
 [Resolve]
@@ -69,4 +58,4 @@ systemctl restart systemd-resolved
     --gossip-encryption-key "${CONSUL_GOSSIP_ENCRYPTION_KEY}" \
     --dns-request-token "${CONSUL_DNS_REQUEST_TOKEN}" &
 
-/opt/nomad/bin/run-nomad.sh --client --consul-token "${CONSUL_TOKEN}" --node-pool "${NODE_POOL}" &
+/opt/nomad/bin/run-nomad.sh --client --consul-token "${CONSUL_TOKEN}" --node-pool "${NODE_POOL}" --acr-login-server "${ACR_LOGIN_SERVER}" &

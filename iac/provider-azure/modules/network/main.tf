@@ -103,8 +103,9 @@ resource "azurerm_network_security_group" "cluster" {
   }
 
   # Allow the Application Gateway subnet to reach the cluster backends: the
-  # Nomad server pool on the Nomad API port, and the client-proxy ingress on the
-  # HTTP/HTTPS ports. The gateway terminates TLS and forwards HTTP to backends.
+  # Nomad server pool on the Nomad API port, and the Traefik ingress entrypoint
+  # (ingress_backend_port). The gateway terminates TLS and forwards HTTP to
+  # Traefik, which does the in-cluster dynamic routing.
   security_rule {
     name                       = "AllowAppGatewayToBackends"
     priority                   = 130
@@ -112,7 +113,7 @@ resource "azurerm_network_security_group" "cluster" {
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_ranges    = [tostring(var.nomad_api_port), tostring(var.ingress_http_port), tostring(var.ingress_https_port)]
+    destination_port_ranges    = [tostring(var.nomad_api_port), tostring(var.ingress_backend_port), tostring(var.ingress_http_port), tostring(var.ingress_https_port)]
     source_address_prefix      = var.appgw_subnet_cidr
     destination_address_prefix = "*"
   }
@@ -450,7 +451,7 @@ resource "azurerm_application_gateway" "main" {
     name                                      = local.probe_ingress
     protocol                                  = "Http"
     path                                      = var.health_probe_path
-    port                                      = var.ingress_http_port
+    port                                      = var.ingress_backend_port
     interval                                  = 5
     timeout                                   = 5
     unhealthy_threshold                       = 3
@@ -462,7 +463,7 @@ resource "azurerm_application_gateway" "main" {
     name                                      = local.probe_grpc
     protocol                                  = "Http"
     path                                      = var.health_probe_path
-    port                                      = var.ingress_http_port
+    port                                      = var.ingress_backend_port
     interval                                  = 5
     timeout                                   = 5
     unhealthy_threshold                       = 3
@@ -484,7 +485,7 @@ resource "azurerm_application_gateway" "main" {
     name                  = local.set_ingress
     cookie_based_affinity = "Disabled"
     protocol              = "Http"
-    port                  = var.ingress_http_port
+    port                  = var.ingress_backend_port
     request_timeout       = 86400
     probe_name            = local.probe_ingress
   }
@@ -492,7 +493,7 @@ resource "azurerm_application_gateway" "main" {
     name                  = local.set_grpc
     cookie_based_affinity = "Disabled"
     protocol              = "Http"
-    port                  = var.ingress_http_port
+    port                  = var.ingress_backend_port
     request_timeout       = 86400
     probe_name            = local.probe_grpc
   }

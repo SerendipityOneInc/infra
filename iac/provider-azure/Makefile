@@ -112,6 +112,24 @@ apply:
 apply-init:
 	@ $(tf_vars) $(TF) apply $(TF_VAR_FILE_ARG) -target=module.init -auto-approve -input=false -compact-warnings
 
+# VMSS instances are stamped from the model captured at creation; `make apply`
+# only updates the model (custom_data, source image, network wiring). Running
+# instances adopt a changed model only after a reimage: the OS disk is reset and
+# cloud-init re-runs the new custom_data (setup scripts, Consul/Nomad, ACR auth).
+# Azure's Rolling upgrade mode would automate this but is unusable here
+# (Manual<->Rolling forces VMSS replacement + the Application Health extension
+# catch-22), so this is the canonical post-apply step whenever custom_data or
+# the setup scripts change. Reimage is destructive per-instance (Consul/Nomad
+# re-join on boot); override POOLS to target a subset.
+POOLS ?= $(PREFIX)control-server $(PREFIX)api $(PREFIX)orch-client $(PREFIX)orch-build $(PREFIX)clickhouse
+.PHONY: reimage
+reimage:
+	@ printf "Reimaging VMSS instances for env: `tput setaf 2``tput bold`$(ENV)`tput sgr0`\n\n"
+	@ for p in $(POOLS); do \
+		echo "reimage: $$p (all instances)"; \
+		az vmss reimage --resource-group $(AZURE_RESOURCE_GROUP) --name $$p --instance-ids '*' --subscription $(AZURE_SUBSCRIPTION_ID) --no-wait; \
+	done
+
 .PHONY: move
 move:
 	@ printf "Moving resource for env: `tput setaf 2``tput bold`$(ENV)`tput sgr0`\n\n"

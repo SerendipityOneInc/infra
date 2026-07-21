@@ -111,6 +111,11 @@ module "network" {
   services_subnet_cidr         = var.services_subnet_cidr
   key_vault_name               = var.key_vault_name
 
+  # The App Gateway forwards default (api./sandbox/docker.) + grpc-api. traffic to
+  # the in-cluster Traefik ingress entrypoint, which then does dynamic host-based
+  # routing. Must match the job-ingress ingress_port below.
+  ingress_backend_port = local.ingress_port
+
   domain_name = var.domain_name
 
   tags = var.tags

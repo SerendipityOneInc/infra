@@ -137,15 +137,17 @@ plugin "docker" {
     volumes {
       enabled = true
     }
-    # ACR auth via the docker-credential-acr-env helper (Managed Identity → ACR
-    # token). Nomad's `auth.config` only honours STATIC `auths` from a docker
-    # config.json and does NOT invoke credential helpers, so pointing it at a
-    # credHelpers file yields anonymous pulls → 401 on private ACR images. Use
-    # `auth.helper`, which makes Nomad run `docker-credential-acr-env` for every
-    # image. (GCP uses static `auths` with a long-lived service-account key; ACR
-    # has no equivalent long-lived static password, so the helper is preferred.)
+    # ACR auth. Nomad's docker driver only reads STATIC auths from a docker
+    # config.json; it does NOT invoke credential helpers (credHelpers/helper are
+    # ignored), so an anonymous pull 401s on private ACR images. generate_docker_auth
+    # (below) mints a token from the MSI-backed acr-env helper and writes it as a
+    # static auth to the path below; a systemd timer refreshes it before the ~3h
+    # token expiry. Non-ACR nodes get an empty config here (harmless).
+    # NOTE: keep this comment free of backticks/dollar-parens: this heredoc is
+    # unquoted, so the shell would evaluate them (a backticked command name once
+    # dumped its --help output straight into this HCL and broke Nomad startup).
     auth {
-      helper = "acr-env"
+      config = "/root/docker/config.json"
     }
   }
 }
@@ -246,6 +248,79 @@ function get_owner_of_path {
   ls -ld "$1" | awk '{print $3}'
 }
 
+# Generate static ACR docker auth for Nomad's docker driver.
+#
+# Nomad's docker driver only reads STATIC `auths` from a docker config.json; it
+# does NOT invoke credential helpers. Azure has no long-lived static registry
+# password like GCP's service-account key, but the MSI-backed
+# docker-credential-acr-env helper mints ~3h ACR tokens. So we run the helper
+# once to fetch a token, write it as a static auth, and install a systemd timer
+# to refresh it before expiry. Fully reproducible (no manual node patching).
+#
+# $1: ACR login server (e.g. myreg.azurecr.io). Empty => write an empty config
+#     (control-server and other non-pulling nodes), so the driver's auth.config
+#     path always exists.
+function generate_docker_auth {
+  local -r acr_login_server="$1"
+  local -r refresh_script="/opt/e2b/refresh-acr-auth.sh"
+
+  mkdir -p /root/docker /opt/e2b
+
+  if [[ -z "$acr_login_server" ]]; then
+    log_info "No ACR login server given; writing empty docker auth config"
+    echo '{}' >/root/docker/config.json
+    chmod 600 /root/docker/config.json
+    return
+  fi
+
+  log_info "Installing ACR docker-auth refresh script + systemd timer for $acr_login_server"
+
+  # Quoted heredoc: the script's own $vars stay literal (evaluated at runtime,
+  # not now). The ACR server is injected via a placeholder to avoid unquoting.
+  cat >"$refresh_script" <<'REFRESH'
+#!/usr/bin/env bash
+# Mint a fresh ACR token via the MSI-backed helper and write it as a STATIC
+# docker auth (Nomad's docker driver only honours static auths). Auto-refreshed
+# by acr-auth-refresh.timer before the ~3h token expiry.
+set -euo pipefail
+ACR="__ACR_LOGIN_SERVER__"
+cred=$(echo "$ACR" | /usr/local/bin/docker-credential-acr-env get)
+token=$(echo "$cred" | sed -n 's/.*"Secret":"\([^"]*\)".*/\1/p')
+[ -n "$token" ] || { echo "ACR token empty (helper output: $cred)" >&2; exit 1; }
+auth=$(printf '00000000-0000-0000-0000-000000000000:%s' "$token" | base64 -w0)
+mkdir -p /root/docker
+printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$ACR" "$auth" >/root/docker/config.json
+chmod 600 /root/docker/config.json
+REFRESH
+  sed -i "s|__ACR_LOGIN_SERVER__|${acr_login_server}|g" "$refresh_script"
+  chmod +x "$refresh_script"
+
+  # Initial generation must succeed before Nomad pulls any ACR image.
+  "$refresh_script"
+
+  cat >/etc/systemd/system/acr-auth-refresh.service <<'UNIT'
+[Unit]
+Description=Refresh static ACR docker auth for Nomad
+[Service]
+Type=oneshot
+ExecStart=/opt/e2b/refresh-acr-auth.sh
+UNIT
+
+  cat >/etc/systemd/system/acr-auth-refresh.timer <<'UNIT'
+[Unit]
+Description=Periodically refresh static ACR docker auth (token lives ~3h)
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=2h
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+
+  systemctl daemon-reload
+  systemctl enable --now acr-auth-refresh.timer
+}
+
 function run {
   local server="false"
   local client="false"
@@ -256,12 +331,17 @@ function run {
   local node_labels=""
   local orchestrator_job_version=""
   local use_sudo=""
+  local acr_login_server=""
 
   while [[ $# -gt 0 ]]; do
     local key="$1"
     case "$key" in
     --server) server="true" ;;
     --client) client="true" ;;
+    --acr-login-server)
+      acr_login_server="$2"
+      shift
+      ;;
     --num-servers)
       num_servers="$2"
       shift
@@ -320,6 +400,7 @@ function run {
 
   generate_nomad_config "$server" "$client" "$num_servers" "$config_dir" "$user" "$consul_token" "$node_pool" "$node_labels" "$orchestrator_job_version"
   generate_supervisor_config "$SUPERVISOR_CONFIG_PATH" "$config_dir" "$data_dir" "$bin_dir" "$log_dir" "$user" "$use_sudo"
+  generate_docker_auth "$acr_login_server"
   start_nomad
 
   if [[ "$server" == "true" ]]; then

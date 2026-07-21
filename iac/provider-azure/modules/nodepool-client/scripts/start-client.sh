@@ -209,18 +209,9 @@ az storage blob download --account-name "${STORAGE_ACCOUNT}" --container-name "$
 
 chmod +x /opt/consul/bin/run-consul.sh /opt/nomad/bin/run-nomad.sh
 
-# Docker auth for ACR via the acr-env credential helper (uses Managed Identity).
-# TODO(azure-acr): docker-credential-acr-env must be baked into the Packer image
-# (mirrors the AWS ecr-login helper dependency).
-mkdir -p /root/docker
-cat <<EOF >/root/docker/config.json
-{
-    "credHelpers": {
-        "${ACR_LOGIN_SERVER}": "acr-env"
-    }
-}
-EOF
-
+# ACR docker auth is set up by run-nomad.sh (--acr-login-server below): it mints
+# a static auth from the MSI-backed acr-env helper + installs a refresh timer.
+# Nomad's docker driver only honours static auths, not credential helpers.
 mkdir -p /etc/systemd/resolved.conf.d/
 cat <<EOF >/etc/systemd/resolved.conf.d/consul.conf
 [Resolve]
@@ -357,9 +348,9 @@ for i in $(seq 1 $FETCH_MAX_ATTEMPTS); do
   sleep $FETCH_INTERVAL_SECONDS
 done
 
-/opt/nomad/bin/run-nomad.sh --client --consul-token "${CONSUL_TOKEN}" --node-pool "${NODE_POOL}" --node-labels "${NODE_LABELS}" --orchestrator-job-version "$ORCHESTRATOR_VERSION" &
+/opt/nomad/bin/run-nomad.sh --client --consul-token "${CONSUL_TOKEN}" --node-pool "${NODE_POOL}" --node-labels "${NODE_LABELS}" --orchestrator-job-version "$ORCHESTRATOR_VERSION" --acr-login-server "${ACR_LOGIN_SERVER}" &
 %{ else }
-/opt/nomad/bin/run-nomad.sh --client --consul-token "${CONSUL_TOKEN}" --node-pool "${NODE_POOL}" --node-labels "${NODE_LABELS}" &
+/opt/nomad/bin/run-nomad.sh --client --consul-token "${CONSUL_TOKEN}" --node-pool "${NODE_POOL}" --node-labels "${NODE_LABELS}" --acr-login-server "${ACR_LOGIN_SERVER}" &
 %{ endif }
 
 # Add alias for ssh-ing to sbx
