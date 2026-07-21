@@ -193,6 +193,13 @@ locals {
     LOKI_URL                     = "http://loki.service.consul:${local.loki_port}"
     CLICKHOUSE_CONNECTION_STRING = local.clickhouse_connection_string
 
+    # Redis is deployed as the in-cluster `redis` Nomad job (registered in Consul
+    # as redis.service.consul). The api requires it; without REDIS_URL the api
+    # treats redis as disabled and fatals ("redis is disabled"). Mirrors the GCP
+    # api_env_vars (self-hosted single-node redis, no managed cluster URL).
+    REDIS_URL       = "redis.service.consul:${local.redis_port}"
+    REDIS_POOL_SIZE = "40"
+
     LOGS_COLLECTOR_ADDRESS       = "http://localhost:${local.logs_proxy_port}"
     OTEL_COLLECTOR_GRPC_ENDPOINT = "localhost:${local.otel_collector_port}"
 
