@@ -27,9 +27,9 @@ variable "cluster_subnet_id" {
   type = string
 }
 
-variable "client_lb_backend_pool_ids" {
+variable "client_appgw_backend_pool_ids" {
   type        = list(string)
-  description = "L4 LB backend pools the client pool joins (client-proxy serves ingress 443/80). Server/api/clickhouse pools do not join any LB pool."
+  description = "App Gateway backend pools the client pool joins (client-proxy serves ingress). Server/api/clickhouse pools join their own pools or none."
   default     = []
 }
 
@@ -229,6 +229,12 @@ variable "clickhouse_image_id" {
 
 variable "clickhouse_job_constraint_prefix" {
   type = string
+}
+
+variable "server_appgw_backend_pool_ids" {
+  type        = list(string)
+  description = "App Gateway backend address pool ids the control-server (Nomad/Consul server) VMSS joins, so the gateway's nomad.<domain> listener routes straight to the servers on 4646."
+  default     = []
 }
 
 variable "tags" {

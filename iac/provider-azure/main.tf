@@ -30,6 +30,16 @@ terraform {
       source  = "hashicorp/random"
       version = "3.8.1"
     }
+
+    tls = {
+      source  = "hashicorp/tls"
+      version = ">= 4.0"
+    }
+
+    pkcs12 = {
+      source  = "chilicat/pkcs12"
+      version = ">= 0.2.5"
+    }
   }
 }
 
@@ -100,7 +110,24 @@ module "network" {
   cluster_subnet_cidr          = var.cluster_subnet_cidr
   services_subnet_cidr         = var.services_subnet_cidr
 
+  domain_name = var.domain_name
+
   tags = var.tags
+}
+
+# ----------------------------------------------------------------------------
+# Cloudflare DNS. The Application Gateway v2 (L7) terminates TLS and host-routes:
+# nomad. -> Nomad server pool (4646), grpc-api. -> grpc pool, and everything else
+# (sandbox wildcard, api., docker.) -> the client-proxy ingress pool. All
+# control-plane hostnames are proxied through Cloudflare (Full SSL mode: the
+# gateway presents a self-signed origin cert). The per-sandbox wildcard is
+# DNS-only and points straight at the gateway frontend IP.
+# ----------------------------------------------------------------------------
+module "cloudflare" {
+  source = "./modules/cloudflare"
+
+  domain_name    = var.domain_name
+  lb_frontend_ip = module.network.appgw_public_ip
 }
 
 resource "random_password" "volume_token_key" {
@@ -261,8 +288,12 @@ module "cluster" {
   identity_client_id = module.init.identity_client_id
 
   cluster_subnet_id = module.network.cluster_subnet_id
-  # Only the client pool (client-proxy ingress) joins the L4 LB backend pool.
-  client_lb_backend_pool_ids = [module.network.lb_backend_pool_id]
+  # The client pool (client-proxy ingress) and the control-server pool (Nomad
+  # server) each join their App Gateway backend pool. The gateway host-routes
+  # nomad.<domain> straight to the server pool on 4646, and everything else to
+  # the client-proxy ingress pool.
+  client_appgw_backend_pool_ids = [module.network.ingress_backend_pool_id]
+  server_appgw_backend_pool_ids = [module.network.nomad_backend_pool_id]
 
   nomad_acl_token_secret          = module.init.cluster.nomad_acl_token
   consul_acl_token_secret         = module.init.cluster.consul_acl_token

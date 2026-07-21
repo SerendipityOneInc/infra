@@ -27,9 +27,9 @@ variable "subnet_id" {
   type = string
 }
 
-variable "lb_backend_pool_ids" {
+variable "appgw_backend_pool_ids" {
   type        = list(string)
-  description = "L4 LB backend pools joined by the primary ipconfiguration. The client pool joins the ingress pool (client-proxy serves 443/80); the build pool passes []."
+  description = "Application Gateway backend pools joined by the primary ipconfiguration. The client pool joins the ingress pool (client-proxy serves ingress); the build pool passes []."
   default     = []
 }
 

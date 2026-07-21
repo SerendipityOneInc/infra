@@ -55,26 +55,28 @@ output "nat_public_ip" {
 }
 
 # ---
-# L4 load balancer
+# Application Gateway v2 (L7)
 # ---
-output "lb_id" {
-  value = azurerm_lb.ingress.id
+output "appgw_public_ip" {
+  description = "Public frontend IP of the Application Gateway. Cloudflare records point here."
+  value       = azurerm_public_ip.appgw.ip_address
 }
 
-output "lb_public_ip_id" {
-  value = azurerm_public_ip.lb.id
+output "appgw_id" {
+  value = azurerm_application_gateway.main.id
 }
 
-output "lb_frontend_ip" {
-  description = "Public frontend IP of the L4 ingress load balancer. Cloudflare records point here."
-  value       = azurerm_public_ip.lb.ip_address
+output "ingress_backend_pool_id" {
+  description = "App Gateway backend pool for the client-proxy ingress (sandbox wildcard / api / docker)."
+  value       = one([for p in azurerm_application_gateway.main.backend_address_pool : p.id if p.name == "ingress-pool"])
 }
 
-output "lb_backend_pool_id" {
-  description = "Backend address pool id. The client-proxy VMSS attaches its instances to this pool."
-  value       = azurerm_lb_backend_address_pool.ingress.id
+output "grpc_backend_pool_id" {
+  description = "App Gateway backend pool for the grpc-api pool."
+  value       = one([for p in azurerm_application_gateway.main.backend_address_pool : p.id if p.name == "grpc-pool"])
 }
 
-output "lb_frontend_ip_configuration_name" {
-  value = azurerm_lb.ingress.frontend_ip_configuration[0].name
+output "nomad_backend_pool_id" {
+  description = "App Gateway backend pool for the Nomad server pool (control-server:4646)."
+  value       = one([for p in azurerm_application_gateway.main.backend_address_pool : p.id if p.name == "nomad-pool"])
 }

@@ -50,6 +50,20 @@ resource "cloudflare_record" "control_plane" {
   comment = var.comment
 }
 
+# Direct control-plane records: DNS-only (grey cloud), pointing straight at the
+# LB frontend. For endpoints on ports Cloudflare will not proxy (e.g. Nomad 4646).
+resource "cloudflare_record" "direct" {
+  for_each = toset(var.direct_subdomains)
+
+  zone_id = data.cloudflare_zone.domain.zone_id
+  name    = "${each.value}.${var.domain_name}"
+  type    = "A"
+  value   = var.lb_frontend_ip
+  proxied = false
+  ttl     = var.wildcard_ttl
+  comment = var.comment
+}
+
 # Per-sandbox wildcard: DNS-only (grey cloud), pointing straight at the LB.
 resource "cloudflare_record" "wildcard" {
   zone_id = data.cloudflare_zone.domain.zone_id

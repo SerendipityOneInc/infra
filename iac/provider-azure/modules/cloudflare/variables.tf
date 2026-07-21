@@ -5,13 +5,19 @@ variable "domain_name" {
 
 variable "lb_frontend_ip" {
   type        = string
-  description = "Public frontend IP of the Azure L4 load balancer. All records point here."
+  description = "Public frontend IP of the Azure Application Gateway. All records point here."
 }
 
 variable "proxied_subdomains" {
   type        = list(string)
-  description = "Control-plane subdomains that are proxied through Cloudflare (edge WAF/DDoS/TLS). Each becomes '<sub>.<domain_name>'."
+  description = "Control-plane subdomains that are proxied through Cloudflare (edge WAF/DDoS/TLS). Each becomes '<sub>.<domain_name>'. nomad. is now proxied HTTPS through the App Gateway (Full SSL mode)."
   default     = ["api", "grpc-api", "nomad", "docker"]
+}
+
+variable "direct_subdomains" {
+  type        = list(string)
+  description = "Subdomains created DNS-only (grey cloud), pointing straight at the App Gateway frontend IP. Empty now that nomad. is proxied HTTPS through the gateway."
+  default     = []
 }
 
 variable "wildcard_ttl" {

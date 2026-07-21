@@ -26,10 +26,16 @@ variable "subnet_id" {
   type = string
 }
 
-variable "lb_backend_pool_ids" {
+variable "appgw_backend_pool_ids" {
   type        = list(string)
-  description = "L4 LB backend address pools the primary ipconfiguration joins. Empty for the control-server pool (Nomad UI is reached in-cluster)."
+  description = "Application Gateway backend address pools the primary ipconfiguration joins. The control-server pool joins the nomad-pool so the gateway routes nomad.<domain> straight to the servers on 4646."
   default     = []
+}
+
+variable "nomad_api_port" {
+  type        = number
+  description = "Nomad HTTP API port. Targeted by the Application Health extension (/v1/agent/health) that gates the Rolling upgrade."
+  default     = 4646
 }
 
 variable "cluster_tag_name" {

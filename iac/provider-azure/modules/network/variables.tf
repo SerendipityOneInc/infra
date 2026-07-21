@@ -117,3 +117,23 @@ variable "ssh_allowed_source" {
   description = "Source address prefix (CIDR, '*'/'Internet', or a service tag like 'VirtualNetwork') permitted to reach SSH (22) on the cluster nodes. Mirrors the GCP internal-remote-connection firewall (IAP range in prod, open in dev)."
   default     = "VirtualNetwork"
 }
+
+variable "nomad_api_port" {
+  type        = number
+  description = "Nomad HTTP API/UI port. The Application Gateway host-routes nomad.<domain> straight to the control-server pool on this port (bypasses the in-cluster ingress so the API is reachable before any Nomad job runs, and as a stable control-plane endpoint)."
+  default     = 4646
+}
+
+# ---
+# Application Gateway v2
+# ---
+variable "domain_name" {
+  type        = string
+  description = "The domain (or subdomain) where e2b runs. Used for the self-signed origin cert (apex + wildcard) and the App Gateway host-based listeners (nomad.<domain>, grpc-api.<domain>)."
+}
+
+variable "appgw_subnet_cidr" {
+  type        = string
+  description = "CIDR for the dedicated Application Gateway v2 subnet. App Gateway v2 requires its own subnet (no other resources), separate from the cluster/services subnets."
+  default     = "10.180.160.0/24"
+}

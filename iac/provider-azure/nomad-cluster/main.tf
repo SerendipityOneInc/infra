@@ -74,9 +74,10 @@ module "control_server" {
   setup_container_name = var.setup_container_name
   setup_files_hash     = local.setup_files_hash
 
-  image_id     = var.control_server_image_id
-  cluster_size = var.control_server_cluster_size
-  machine_type = var.control_server_machine_type
+  image_id               = var.control_server_image_id
+  cluster_size           = var.control_server_cluster_size
+  machine_type           = var.control_server_machine_type
+  appgw_backend_pool_ids = var.server_appgw_backend_pool_ids
 
   admin_username = var.admin_username
   admin_password = random_password.vm_admin.result
@@ -214,10 +215,10 @@ module "client" {
   resource_group_name = var.resource_group_name
   location            = var.location
 
-  identity_id         = var.identity_id
-  identity_client_id  = var.identity_client_id
-  subnet_id           = var.cluster_subnet_id
-  lb_backend_pool_ids = var.client_lb_backend_pool_ids
+  identity_id            = var.identity_id
+  identity_client_id     = var.identity_client_id
+  subnet_id              = var.cluster_subnet_id
+  appgw_backend_pool_ids = var.client_appgw_backend_pool_ids
 
   cluster_tag_name  = local.cluster_tag_name
   cluster_tag_value = local.cluster_tag_value

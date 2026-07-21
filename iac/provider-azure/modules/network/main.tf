@@ -4,6 +4,18 @@ terraform {
       source  = "hashicorp/azurerm"
       version = ">= 4.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = ">= 4.0"
+    }
+    pkcs12 = {
+      source  = "chilicat/pkcs12"
+      version = ">= 0.2.5"
+    }
   }
 }
 
@@ -11,10 +23,12 @@ terraform {
 # Virtual network + subnets
 #
 # Mirrors provider-aws/modules/network (VPC + subnets) and the GCP
-# nomad-cluster/network subnetwork. Unlike GCP/AWS we do NOT stand up an L7
-# load balancer: a single Standard (L4) azurerm_lb forwards raw TCP 443/80 to
-# the in-cluster ingress (client-proxy VMSS), which terminates TLS and performs
-# all host/path routing. Cloudflare provides edge WAF/DDoS/TLS.
+# nomad-cluster/network subnetwork. Like GCP (L7 HTTPS LB) and AWS (ALB) we
+# stand up an L7 gateway — an Azure Application Gateway v2 — that terminates
+# TLS and host-routes: nomad.<domain> straight to the Nomad server pool (4646),
+# grpc-api.<domain> to the grpc pool, and everything else (sandbox wildcard,
+# api., docker.) to the in-cluster ingress (client-proxy VMSS). Cloudflare
+# fronts the gateway (Full SSL mode; self-signed origin cert).
 # ============================================================================
 
 # When existing_vnet_name is set, ADD our subnets to that VNet instead of
@@ -85,6 +99,21 @@ resource "azurerm_network_security_group" "cluster" {
     source_port_range          = "*"
     destination_port_ranges    = [tostring(var.health_probe_port), tostring(var.ingress_https_port), tostring(var.ingress_http_port)]
     source_address_prefix      = "AzureLoadBalancer"
+    destination_address_prefix = "*"
+  }
+
+  # Allow the Application Gateway subnet to reach the cluster backends: the
+  # Nomad server pool on the Nomad API port, and the client-proxy ingress on the
+  # HTTP/HTTPS ports. The gateway terminates TLS and forwards HTTP to backends.
+  security_rule {
+    name                       = "AllowAppGatewayToBackends"
+    priority                   = 130
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = [tostring(var.nomad_api_port), tostring(var.ingress_http_port), tostring(var.ingress_https_port)]
+    source_address_prefix      = var.appgw_subnet_cidr
     destination_address_prefix = "*"
   }
 
@@ -222,79 +251,329 @@ resource "azurerm_subnet_nat_gateway_association" "services" {
 }
 
 # ============================================================================
-# Standard (L4) load balancer. Replaces the AWS L7 ALB and the GCP L7 URL-map
-# stack. Forwards raw TCP 443/80 to the in-cluster ingress backend pool; the
-# ingress terminates TLS and does all host/path routing.
+# Application Gateway v2 (L7). Replaces the Standard L4 LB and mirrors the AWS
+# ALB / GCP L7 HTTPS LB: it terminates TLS and host-routes traffic to three
+# backend pools — the Nomad server pool (nomad.<domain> -> 4646), the grpc pool
+# (grpc-api.<domain>), and the client-proxy ingress pool (everything else:
+# sandbox wildcard, api., docker.). Cloudflare fronts it (Full SSL mode).
 # ============================================================================
 
-resource "azurerm_public_ip" "lb" {
-  name                = "${var.prefix}lb-pip"
+# App Gateway v2 requires its own dedicated subnet. Do NOT associate the cluster
+# NSG or the NAT gateway here — App Gateway manages its own outbound path and
+# needs the infrastructure ports opened by its dedicated NSG below.
+resource "azurerm_subnet" "appgw" {
+  name                 = "${trimsuffix(var.prefix, "-")}-appgw"
+  resource_group_name  = local.vnet_rg
+  virtual_network_name = local.vnet_name
+  address_prefixes     = [var.appgw_subnet_cidr]
+}
+
+resource "azurerm_network_security_group" "appgw" {
+  name                = "${var.prefix}appgw"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  tags                = var.tags
+
+  # App Gateway v2 mandatory infrastructure ports.
+  security_rule {
+    name                       = "AllowGatewayManager"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "65200-65535"
+    source_address_prefix      = "GatewayManager"
+    destination_address_prefix = "*"
+  }
+  security_rule {
+    name                       = "AllowAzureLoadBalancer"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "AzureLoadBalancer"
+    destination_address_prefix = "*"
+  }
+  # Public HTTPS/HTTP to the gateway listeners (Cloudflare fronts this; kept open
+  # so Cloudflare's proxy IPs can reach it).
+  security_rule {
+    name                       = "AllowWebInbound"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["443", "80"]
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "appgw" {
+  subnet_id                 = azurerm_subnet.appgw.id
+  network_security_group_id = azurerm_network_security_group.appgw.id
+}
+
+# ---
+# Self-signed origin certificate. Cloudflare fronts the gateway in Full mode, so
+# a self-signed origin cert is accepted. Covers the apex + wildcard so every
+# control-plane and sandbox host validates.
+# ---
+resource "random_password" "appgw_cert" {
+  length  = 24
+  special = false
+}
+
+resource "tls_private_key" "appgw" {
+  algorithm = "RSA"
+  rsa_bits  = 2048
+}
+
+resource "tls_self_signed_cert" "appgw" {
+  private_key_pem = tls_private_key.appgw.private_key_pem
+
+  subject {
+    common_name  = "*.${var.domain_name}"
+    organization = "e2b-self-hosted"
+  }
+
+  dns_names = ["${var.domain_name}", "*.${var.domain_name}"]
+
+  validity_period_hours = 87600 # 10 years
+  early_renewal_hours   = 720
+
+  allowed_uses = ["key_encipherment", "digital_signature", "server_auth"]
+}
+
+resource "pkcs12_from_pem" "appgw" {
+  password        = random_password.appgw_cert.result
+  cert_pem        = tls_self_signed_cert.appgw.cert_pem
+  private_key_pem = tls_private_key.appgw.private_key_pem
+}
+
+resource "azurerm_public_ip" "appgw" {
+  name                = "${var.prefix}appgw-pip"
   resource_group_name = var.resource_group_name
   location            = var.location
   allocation_method   = "Static"
   sku                 = "Standard"
-
-  tags = var.tags
+  tags                = var.tags
 }
 
-resource "azurerm_lb" "ingress" {
-  name                = "${var.prefix}ingress"
+locals {
+  appgw_name          = "${var.prefix}appgw"
+  appgw_fe_ip         = "appgw-frontend-ip"
+  appgw_fe_port_https = "https"
+  appgw_fe_port_http  = "http"
+  appgw_ssl_cert      = "appgw-cert"
+  appgw_ip_config     = "appgw-ipcfg"
+  # backend pools
+  pool_nomad   = "nomad-pool"
+  pool_ingress = "ingress-pool"
+  pool_grpc    = "grpc-pool"
+  # http settings
+  set_nomad   = "nomad-http"
+  set_ingress = "ingress-http"
+  set_grpc    = "grpc-http"
+  # probes
+  probe_nomad   = "nomad-probe"
+  probe_ingress = "ingress-probe"
+  probe_grpc    = "grpc-probe"
+  # listeners
+  lst_nomad   = "nomad-listener"
+  lst_grpc    = "grpc-listener"
+  lst_default = "default-listener"
+  lst_http    = "http-listener"
+}
+
+resource "azurerm_application_gateway" "main" {
+  name                = local.appgw_name
   resource_group_name = var.resource_group_name
   location            = var.location
-  sku                 = "Standard"
+  tags                = var.tags
 
-  frontend_ip_configuration {
-    name                 = "${var.prefix}ingress-frontend"
-    public_ip_address_id = azurerm_public_ip.lb.id
+  sku {
+    name = "Standard_v2"
+    tier = "Standard_v2"
   }
 
-  tags = var.tags
-}
+  autoscale_configuration {
+    min_capacity = 1
+    max_capacity = 2
+  }
 
-# Backend pool for the ingress / client-proxy nodes. Deliberately created empty:
-# the client-proxy VMSS does not exist yet (later chunk). The VMSS network
-# profile will reference this pool's id (exported via outputs) so its instances
-# register automatically. No membership is wired here.
-resource "azurerm_lb_backend_address_pool" "ingress" {
-  name            = "${var.prefix}ingress-backend"
-  loadbalancer_id = azurerm_lb.ingress.id
-}
+  gateway_ip_configuration {
+    name      = local.appgw_ip_config
+    subnet_id = azurerm_subnet.appgw.id
+  }
 
-resource "azurerm_lb_probe" "ingress" {
-  name                = "${var.prefix}ingress-health"
-  loadbalancer_id     = azurerm_lb.ingress.id
-  protocol            = var.health_probe_protocol
-  port                = var.health_probe_port
-  request_path        = var.health_probe_protocol == "Tcp" ? null : var.health_probe_path
-  interval_in_seconds = var.health_probe_interval_seconds
-  number_of_probes    = var.health_probe_number_of_probes
-}
+  frontend_ip_configuration {
+    name                 = local.appgw_fe_ip
+    public_ip_address_id = azurerm_public_ip.appgw.id
+  }
 
-# 443 -> ingress TLS port. Raw TCP pass-through (TLS terminated in-cluster).
-resource "azurerm_lb_rule" "https" {
-  name                           = "${var.prefix}https"
-  loadbalancer_id                = azurerm_lb.ingress.id
-  protocol                       = "Tcp"
-  frontend_port                  = 443
-  backend_port                   = var.ingress_https_port
-  frontend_ip_configuration_name = azurerm_lb.ingress.frontend_ip_configuration[0].name
-  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.ingress.id]
-  probe_id                       = azurerm_lb_probe.ingress.id
-  tcp_reset_enabled              = true
-  # Egress is handled by the NAT gateway, so the LB must not also SNAT.
-  disable_outbound_snat = true
-}
+  frontend_port {
+    name = local.appgw_fe_port_https
+    port = 443
+  }
+  frontend_port {
+    name = local.appgw_fe_port_http
+    port = 80
+  }
 
-# 80 -> ingress HTTP port (redirect / ACME).
-resource "azurerm_lb_rule" "http" {
-  name                           = "${var.prefix}http"
-  loadbalancer_id                = azurerm_lb.ingress.id
-  protocol                       = "Tcp"
-  frontend_port                  = 80
-  backend_port                   = var.ingress_http_port
-  frontend_ip_configuration_name = azurerm_lb.ingress.frontend_ip_configuration[0].name
-  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.ingress.id]
-  probe_id                       = azurerm_lb_probe.ingress.id
-  tcp_reset_enabled              = true
-  disable_outbound_snat          = true
+  ssl_certificate {
+    name     = local.appgw_ssl_cert
+    data     = pkcs12_from_pem.appgw.result
+    password = random_password.appgw_cert.result
+  }
+
+  # ---- backend pools (empty; VMSS instances register via their ipconfig) ----
+  backend_address_pool { name = local.pool_nomad }
+  backend_address_pool { name = local.pool_ingress }
+  backend_address_pool { name = local.pool_grpc }
+
+  # ---- probes ----
+  probe {
+    name                                      = local.probe_nomad
+    protocol                                  = "Http"
+    path                                      = "/v1/agent/health"
+    port                                      = var.nomad_api_port
+    interval                                  = 5
+    timeout                                   = 5
+    unhealthy_threshold                       = 3
+    pick_host_name_from_backend_http_settings = false
+    host                                      = "127.0.0.1"
+    match { status_code = ["200-399"] }
+  }
+  probe {
+    name                                      = local.probe_ingress
+    protocol                                  = "Http"
+    path                                      = var.health_probe_path
+    port                                      = var.ingress_http_port
+    interval                                  = 5
+    timeout                                   = 5
+    unhealthy_threshold                       = 3
+    pick_host_name_from_backend_http_settings = false
+    host                                      = "127.0.0.1"
+    match { status_code = ["200-399"] }
+  }
+  probe {
+    name                                      = local.probe_grpc
+    protocol                                  = "Http"
+    path                                      = var.health_probe_path
+    port                                      = var.ingress_http_port
+    interval                                  = 5
+    timeout                                   = 5
+    unhealthy_threshold                       = 3
+    pick_host_name_from_backend_http_settings = false
+    host                                      = "127.0.0.1"
+    match { status_code = ["200-399"] }
+  }
+
+  # ---- backend http settings (gateway terminates TLS, talks HTTP to backends) ----
+  backend_http_settings {
+    name                  = local.set_nomad
+    cookie_based_affinity = "Disabled"
+    protocol              = "Http"
+    port                  = var.nomad_api_port
+    request_timeout       = 60
+    probe_name            = local.probe_nomad
+  }
+  backend_http_settings {
+    name                  = local.set_ingress
+    cookie_based_affinity = "Disabled"
+    protocol              = "Http"
+    port                  = var.ingress_http_port
+    request_timeout       = 86400
+    probe_name            = local.probe_ingress
+  }
+  backend_http_settings {
+    name                  = local.set_grpc
+    cookie_based_affinity = "Disabled"
+    protocol              = "Http"
+    port                  = var.ingress_http_port
+    request_timeout       = 86400
+    probe_name            = local.probe_grpc
+  }
+
+  # ---- listeners (multi-site host-based on 443; one default catch-all) ----
+  http_listener {
+    name                           = local.lst_nomad
+    frontend_ip_configuration_name = local.appgw_fe_ip
+    frontend_port_name             = local.appgw_fe_port_https
+    protocol                       = "Https"
+    ssl_certificate_name           = local.appgw_ssl_cert
+    host_name                      = "nomad.${var.domain_name}"
+  }
+  http_listener {
+    name                           = local.lst_grpc
+    frontend_ip_configuration_name = local.appgw_fe_ip
+    frontend_port_name             = local.appgw_fe_port_https
+    protocol                       = "Https"
+    ssl_certificate_name           = local.appgw_ssl_cert
+    host_name                      = "grpc-api.${var.domain_name}"
+  }
+  http_listener {
+    name                           = local.lst_default
+    frontend_ip_configuration_name = local.appgw_fe_ip
+    frontend_port_name             = local.appgw_fe_port_https
+    protocol                       = "Https"
+    ssl_certificate_name           = local.appgw_ssl_cert
+    # no host_name => default/catch-all (sandbox wildcard, api, docker)
+  }
+  http_listener {
+    name                           = local.lst_http
+    frontend_ip_configuration_name = local.appgw_fe_ip
+    frontend_port_name             = local.appgw_fe_port_http
+    protocol                       = "Http"
+  }
+
+  # ---- routing rules (v2 requires unique integer priority per rule) ----
+  request_routing_rule {
+    name                       = "nomad-rule"
+    rule_type                  = "Basic"
+    priority                   = 100
+    http_listener_name         = local.lst_nomad
+    backend_address_pool_name  = local.pool_nomad
+    backend_http_settings_name = local.set_nomad
+  }
+  request_routing_rule {
+    name                       = "grpc-rule"
+    rule_type                  = "Basic"
+    priority                   = 110
+    http_listener_name         = local.lst_grpc
+    backend_address_pool_name  = local.pool_grpc
+    backend_http_settings_name = local.set_grpc
+  }
+  request_routing_rule {
+    name                       = "default-rule"
+    rule_type                  = "Basic"
+    priority                   = 120
+    http_listener_name         = local.lst_default
+    backend_address_pool_name  = local.pool_ingress
+    backend_http_settings_name = local.set_ingress
+  }
+  # HTTP -> HTTPS redirect
+  redirect_configuration {
+    name                 = "http-to-https"
+    redirect_type        = "Permanent"
+    target_listener_name = local.lst_default
+    include_path         = true
+    include_query_string = true
+  }
+  request_routing_rule {
+    name                        = "http-redirect-rule"
+    rule_type                   = "Basic"
+    priority                    = 130
+    http_listener_name          = local.lst_http
+    redirect_configuration_name = "http-to-https"
+  }
+
+  lifecycle {
+    # VMSS instances register into the backend pools out-of-band; don't fight it.
+    ignore_changes = [backend_address_pool]
+  }
 }
