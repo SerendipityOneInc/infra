@@ -109,6 +109,7 @@ module "network" {
   existing_vnet_resource_group = var.existing_vnet_resource_group
   cluster_subnet_cidr          = var.cluster_subnet_cidr
   services_subnet_cidr         = var.services_subnet_cidr
+  key_vault_name               = var.key_vault_name
 
   domain_name = var.domain_name
 

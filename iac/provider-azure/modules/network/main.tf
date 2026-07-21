@@ -318,40 +318,38 @@ resource "azurerm_subnet_network_security_group_association" "appgw" {
 }
 
 # ---
-# Self-signed origin certificate. Cloudflare fronts the gateway in Full mode, so
-# a self-signed origin cert is accepted. Covers the apex + wildcard so every
-# control-plane and sandbox host validates.
+# Origin certificate for the App Gateway HTTPS listeners. The zone runs Cloudflare
+# "Full (strict)", which validates the origin cert against the Cloudflare Origin
+# CA, so we present a Cloudflare Origin CA certificate (SANs cover
+# sandbox2.<domain> + *.sandbox2.<domain>). The cert + key live in Key Vault
+# (secrets appgw-origin-cert / appgw-origin-key, populated out-of-band); terraform
+# reads them and packs a PFX for the gateway ssl_certificate. Rotate by replacing
+# the KV secrets and re-applying.
 # ---
 resource "random_password" "appgw_cert" {
   length  = 24
   special = false
 }
 
-resource "tls_private_key" "appgw" {
-  algorithm = "RSA"
-  rsa_bits  = 2048
+data "azurerm_key_vault" "main" {
+  name                = var.key_vault_name
+  resource_group_name = var.resource_group_name
 }
 
-resource "tls_self_signed_cert" "appgw" {
-  private_key_pem = tls_private_key.appgw.private_key_pem
+data "azurerm_key_vault_secret" "appgw_origin_cert" {
+  name         = "appgw-origin-cert"
+  key_vault_id = data.azurerm_key_vault.main.id
+}
 
-  subject {
-    common_name  = "*.${var.domain_name}"
-    organization = "e2b-self-hosted"
-  }
-
-  dns_names = ["${var.domain_name}", "*.${var.domain_name}"]
-
-  validity_period_hours = 87600 # 10 years
-  early_renewal_hours   = 720
-
-  allowed_uses = ["key_encipherment", "digital_signature", "server_auth"]
+data "azurerm_key_vault_secret" "appgw_origin_key" {
+  name         = "appgw-origin-key"
+  key_vault_id = data.azurerm_key_vault.main.id
 }
 
 resource "pkcs12_from_pem" "appgw" {
   password        = random_password.appgw_cert.result
-  cert_pem        = tls_self_signed_cert.appgw.cert_pem
-  private_key_pem = tls_private_key.appgw.private_key_pem
+  cert_pem        = data.azurerm_key_vault_secret.appgw_origin_cert.value
+  private_key_pem = data.azurerm_key_vault_secret.appgw_origin_key.value
 }
 
 resource "azurerm_public_ip" "appgw" {

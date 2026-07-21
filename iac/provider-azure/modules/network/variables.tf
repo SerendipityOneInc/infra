@@ -137,3 +137,8 @@ variable "appgw_subnet_cidr" {
   description = "CIDR for the dedicated Application Gateway v2 subnet. App Gateway v2 requires its own subnet (no other resources), separate from the cluster/services subnets."
   default     = "10.180.160.0/24"
 }
+
+variable "key_vault_name" {
+  type        = string
+  description = "Key Vault holding the App Gateway origin certificate secrets (appgw-origin-cert / appgw-origin-key)."
+}
