@@ -137,8 +137,15 @@ plugin "docker" {
     volumes {
       enabled = true
     }
+    # ACR auth via the docker-credential-acr-env helper (Managed Identity → ACR
+    # token). Nomad's `auth.config` only honours STATIC `auths` from a docker
+    # config.json and does NOT invoke credential helpers, so pointing it at a
+    # credHelpers file yields anonymous pulls → 401 on private ACR images. Use
+    # `auth.helper`, which makes Nomad run `docker-credential-acr-env` for every
+    # image. (GCP uses static `auths` with a long-lived service-account key; ACR
+    # has no equivalent long-lived static password, so the helper is preferred.)
     auth {
-      config = "/root/docker/config.json"
+      helper = "acr-env"
     }
   }
 }
