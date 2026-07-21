@@ -38,44 +38,16 @@ resource "azurerm_linux_virtual_machine_scale_set" "control_server" {
   admin_password                  = var.admin_password
   disable_password_authentication = false
 
-  # Rolling upgrade (terraform-driven): model changes (App Gateway pool
-  # membership, custom_data, image) roll onto the running instances automatically
-  # on `terraform apply`, one server at a time so Nomad/Consul raft quorum is
-  # preserved — no manual `az vmss update-instances` / `reimage`. App Gateway
-  # does not provide a VMSS health probe, so the Application Health extension
-  # below is the health source that gates the rolling batches and instance repair.
-  upgrade_mode           = "Rolling"
+  # Manual upgrade mode: a model change (App Gateway pool membership, custom_data,
+  # image) updates the VMSS model; running instances adopt it via a one-time
+  # `az vmss update-instances` (pool membership — no reimage) or `reimage`
+  # (custom_data). Azure Rolling mode was tried and abandoned here: the
+  # Manual<->Rolling switch is ForceNew, and Rolling behind an App Gateway needs
+  # an Application Health extension pre-installed on every instance before the
+  # switch — a catch-22 when migrating off an LB-probe health source.
+  upgrade_mode           = "Manual"
   overprovision          = false
   single_placement_group = false
-
-  rolling_upgrade_policy {
-    # 34% of 3 instances = 1 at a time; quorum (2/3) stays up. Pause between
-    # batches so the reimaged server rejoins the cluster before the next.
-    max_batch_instance_percent              = 34
-    max_unhealthy_instance_percent          = 100
-    max_unhealthy_upgraded_instance_percent = 100
-    pause_time_between_batches              = "PT2M"
-  }
-
-  # Health source for Rolling + automatic instance repair (App Gateway gives no
-  # VMSS probe). Reports each instance healthy once Nomad's agent health endpoint
-  # returns 2xx on the API port.
-  extension {
-    name                       = "AppHealth"
-    publisher                  = "Microsoft.ManagedServices"
-    type                       = "ApplicationHealthLinux"
-    type_handler_version       = "1.0"
-    auto_upgrade_minor_version = true
-    settings = jsonencode({
-      protocol    = "http"
-      port        = var.nomad_api_port
-      requestPath = "/v1/agent/health"
-    })
-  }
-
-  automatic_instance_repair {
-    enabled = true
-  }
 
   # Packer image when supplied; otherwise a Gen2 Ubuntu marketplace image so the
   # module validates/bootstraps before the Packer chunk lands.
