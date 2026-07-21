@@ -225,6 +225,10 @@ locals {
     # Used by in-cluster client-proxy to call API ResumeSandbox over gRPC.
     API_INTERNAL_GRPC_ADDRESS = "api-internal-grpc.service.consul:${var.api_internal_grpc_port}"
     LAUNCH_DARKLY_API_KEY     = module.init.launch_darkly_api_key
+    # client-proxy also requires Redis; without REDIS_URL it fatals with
+    # "redis is disabled". Point at the in-cluster redis Nomad job.
+    REDIS_URL       = "redis.service.consul:${local.redis_port}"
+    REDIS_POOL_SIZE = "40"
   }, var.client_proxy_env_vars)
 
   orchestrator_env_vars = merge({
