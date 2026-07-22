@@ -75,6 +75,20 @@ resource "azurerm_linux_virtual_machine_scale_set" "control_server" {
     disk_size_gb         = var.os_disk_size_gb
   }
 
+  # Persistent state disk for the Nomad + Consul raft data. Azure reimage (both
+  # explicit `make reimage` and the azurerm provider's automatic
+  # reimage_on_manual_upgrade roll on custom_data changes) resets ONLY the OS
+  # disk; data disks survive. start-server.sh mounts this at boot and points
+  # /opt/{consul,nomad}/data at it, so a reimaged control-server rejoins raft
+  # with its state intact — no lost jobs, no mixed-generation quorum deadlock.
+  data_disk {
+    lun                  = 0
+    caching              = "None"
+    create_option        = "Empty"
+    disk_size_gb         = var.state_disk_size_gb
+    storage_account_type = "Premium_LRS"
+  }
+
   network_interface {
     name    = "${var.prefix}control-server-nic"
     primary = true

@@ -87,6 +87,12 @@ variable "os_disk_size_gb" {
   default = 40
 }
 
+variable "state_disk_size_gb" {
+  type        = number
+  description = "Size of the persistent data disk holding the Nomad + Consul raft state (survives OS-disk reimage)."
+  default     = 64
+}
+
 # ---
 # Admin auth. SSH is denied from the internet by the cluster NSG; nodes sit on a
 # private subnet with NAT egress. TODO(azure-hardening): switch to admin_ssh_key.
