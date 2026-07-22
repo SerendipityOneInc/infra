@@ -182,7 +182,11 @@ ExecStart=$consul_bin_dir/consul agent -config-dir $consul_config_dir -data-dir 
 ExecReload=$consul_bin_dir/consul reload
 ExecStop=$consul_bin_dir/consul leave
 KillMode=process
-Restart=on-failure
+# always (not on-failure): a clean-exit or wedged-then-exited consul must still
+# come back — a node without its consul agent drops out of service discovery
+# and takes nomad's server auto-join / service routing on it down with it.
+Restart=always
+RestartSec=5
 TimeoutSec=300s
 LimitNOFILE=65536
 

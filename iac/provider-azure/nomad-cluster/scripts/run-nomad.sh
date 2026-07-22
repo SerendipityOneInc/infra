@@ -203,6 +203,12 @@ stderr_logfile=$nomad_log_dir/nomad-error.log
 numprocs=1
 autostart=true
 autorestart=true
+; Don't give up: supervisor's default startretries=3 FATALs after ~3 quick
+; failures (observed: a transient boot-time dependency took nomad down for
+; good). startsecs=10 = must stay up 10s to count as RUNNING; with escalating
+; backoff, 100 retries rides out over an hour of continuous failure.
+startsecs=10
+startretries=100
 stopsignal=INT
 minfds=65536
 user=$nomad_user
