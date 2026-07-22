@@ -307,6 +307,19 @@ resource "azurerm_network_security_group" "appgw" {
     source_address_prefix      = "Internet"
     destination_address_prefix = "*"
   }
+
+  # In-VNet consumers hitting the PRIVATE frontend (internal domain).
+  security_rule {
+    name                       = "AllowVnetWebInbound"
+    priority                   = 130
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "*"
+  }
 }
 
 resource "azurerm_subnet_network_security_group_association" "appgw" {
@@ -355,10 +368,13 @@ resource "azurerm_public_ip" "appgw" {
 locals {
   appgw_name          = "${var.prefix}appgw"
   appgw_fe_ip         = "appgw-frontend-ip"
+  appgw_fe_ip_private = "appgw-frontend-ip-private"
   appgw_fe_port_https = "https"
   appgw_fe_port_http  = "http"
   appgw_ssl_cert      = "appgw-cert"
+  appgw_ssl_cert_int  = "appgw-cert-internal"
   appgw_ip_config     = "appgw-ipcfg"
+  appgw_private_fe_ip = var.appgw_private_frontend_ip != "" ? var.appgw_private_frontend_ip : cidrhost(var.appgw_subnet_cidr, 250)
   # backend pools
   pool_nomad   = "nomad-pool"
   pool_ingress = "ingress-pool"
@@ -372,10 +388,11 @@ locals {
   probe_ingress = "ingress-probe"
   probe_grpc    = "grpc-probe"
   # listeners
-  lst_nomad   = "nomad-listener"
-  lst_grpc    = "grpc-listener"
-  lst_default = "default-listener"
-  lst_http    = "http-listener"
+  lst_nomad       = "nomad-listener"
+  lst_grpc        = "grpc-listener"
+  lst_default     = "default-listener"
+  lst_http        = "http-listener"
+  lst_int_default = "internal-default-listener"
 }
 
 resource "azurerm_application_gateway" "main" {
@@ -404,6 +421,15 @@ resource "azurerm_application_gateway" "main" {
     public_ip_address_id = azurerm_public_ip.appgw.id
   }
 
+  # Private frontend for in-VNet consumers (internal domain via Private DNS).
+  # Static IP so the Private DNS records never drift.
+  frontend_ip_configuration {
+    name                          = local.appgw_fe_ip_private
+    subnet_id                     = azurerm_subnet.appgw.id
+    private_ip_address_allocation = "Static"
+    private_ip_address            = local.appgw_private_fe_ip
+  }
+
   frontend_port {
     name = local.appgw_fe_port_https
     port = 443
@@ -423,6 +449,11 @@ resource "azurerm_application_gateway" "main" {
     # Versionless secret reference: the gateway polls KV and picks up renewed
     # certificate versions automatically.
     key_vault_secret_id = "${data.azurerm_key_vault.main.vault_uri}secrets/${var.public_cert_name}"
+  }
+
+  ssl_certificate {
+    name                = local.appgw_ssl_cert_int
+    key_vault_secret_id = "${data.azurerm_key_vault.main.vault_uri}secrets/${var.internal_cert_name}"
   }
 
   # ---- backend pools (empty; VMSS instances register via their ipconfig) ----
@@ -525,6 +556,17 @@ resource "azurerm_application_gateway" "main" {
     frontend_port_name             = local.appgw_fe_port_http
     protocol                       = "Http"
   }
+  # Internal catch-all on the PRIVATE frontend: api.<int-domain>, the sandbox
+  # wildcard and anything else from in-VNet consumers. Traefik does the
+  # host-based routing behind it, so one listener + the ingress backend covers
+  # the whole internal data plane.
+  http_listener {
+    name                           = local.lst_int_default
+    frontend_ip_configuration_name = local.appgw_fe_ip_private
+    frontend_port_name             = local.appgw_fe_port_https
+    protocol                       = "Https"
+    ssl_certificate_name           = local.appgw_ssl_cert_int
+  }
 
   # ---- routing rules (v2 requires unique integer priority per rule) ----
   request_routing_rule {
@@ -548,6 +590,14 @@ resource "azurerm_application_gateway" "main" {
     rule_type                  = "Basic"
     priority                   = 120
     http_listener_name         = local.lst_default
+    backend_address_pool_name  = local.pool_ingress
+    backend_http_settings_name = local.set_ingress
+  }
+  request_routing_rule {
+    name                       = "internal-default-rule"
+    rule_type                  = "Basic"
+    priority                   = 140
+    http_listener_name         = local.lst_int_default
     backend_address_pool_name  = local.pool_ingress
     backend_http_settings_name = local.set_ingress
   }
@@ -575,4 +625,46 @@ resource "azurerm_application_gateway" "main" {
   # The gateway validates the KV secret reference at update time; make sure its
   # identity can already read secrets.
   depends_on = [azurerm_role_assignment.appgw_kv_secrets]
+}
+
+# ============================================================================
+# Private DNS for the internal domain (in-VNet consumers only).
+#
+# sandbox2-int.<zone> is a REAL subdomain of the public zone (so Let's Encrypt
+# issues for it) but is published ONLY here: the zone links to the VNet and
+# resolves apex + wildcard to the App Gateway's private frontend. In-VNet
+# clients (ECA-986 bots) set E2B_DOMAIN=<internal domain> and reach the
+# sandbox data plane without Cloudflare or the public internet; from outside
+# the VNet the name simply does not resolve.
+# ============================================================================
+
+resource "azurerm_private_dns_zone" "internal" {
+  name                = var.internal_domain_name
+  resource_group_name = var.resource_group_name
+  tags                = var.tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "internal" {
+  name                  = "${var.prefix}internal-dns-link"
+  resource_group_name   = var.resource_group_name
+  private_dns_zone_name = azurerm_private_dns_zone.internal.name
+  virtual_network_id    = local.vnet_id
+  registration_enabled  = false
+  tags                  = var.tags
+}
+
+resource "azurerm_private_dns_a_record" "internal_apex" {
+  name                = "@"
+  zone_name           = azurerm_private_dns_zone.internal.name
+  resource_group_name = var.resource_group_name
+  ttl                 = 300
+  records             = [local.appgw_private_fe_ip]
+}
+
+resource "azurerm_private_dns_a_record" "internal_wildcard" {
+  name                = "*"
+  zone_name           = azurerm_private_dns_zone.internal.name
+  resource_group_name = var.resource_group_name
+  ttl                 = 300
+  records             = [local.appgw_private_fe_ip]
 }

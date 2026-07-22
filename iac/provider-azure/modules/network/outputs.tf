@@ -80,3 +80,13 @@ output "nomad_backend_pool_id" {
   description = "App Gateway backend pool for the Nomad server pool (control-server:4646)."
   value       = one([for p in azurerm_application_gateway.main.backend_address_pool : p.id if p.name == "nomad-pool"])
 }
+
+output "appgw_private_ip" {
+  description = "App Gateway private frontend IP (internal domain resolves here via the Private DNS zone)."
+  value       = local.appgw_private_fe_ip
+}
+
+output "internal_domain_name" {
+  description = "Internal-only domain served by the private frontend (set E2B_DOMAIN to this for in-VNet consumers)."
+  value       = var.internal_domain_name
+}

@@ -75,6 +75,22 @@ variable "public_cert_name" {
   description = "Key Vault certificate name (issued/renewed by keyvault-acmebot) whose backing secret the App Gateway references versionlessly for automatic rotation."
 }
 
+variable "internal_domain_name" {
+  type        = string
+  description = "Internal-only domain for in-VNet consumers (e.g. sandbox2-int.yesy.dev). Resolvable only via the Private DNS zone linked to the VNet; served by the App Gateway private frontend."
+}
+
+variable "internal_cert_name" {
+  type        = string
+  description = "Key Vault certificate name for the internal domain's LE cert (issued/renewed by keyvault-acmebot)."
+}
+
+variable "appgw_private_frontend_ip" {
+  type        = string
+  description = "Static private IP for the App Gateway's in-VNet frontend. Empty = derive host .250 of the appgw subnet (high in the range to dodge the dynamic IPs the gateway instances take)."
+  default     = ""
+}
+
 variable "ingress_backend_port" {
   type        = number
   description = "TCP port the in-cluster Traefik ingress entrypoint listens on (job-ingress ingress_port). The App Gateway forwards the default (api./sandbox/docker.) + grpc-api. traffic here; Traefik then does dynamic host-based routing (api service, sandboxes via Consul catalog). Traefik serves /ping on this port for the health probe. Must equal local.ingress_port in provider-azure/main.tf."

@@ -115,6 +115,11 @@ module "network" {
   # LE cert issued/renewed into KV by module.acmebot; the gateway auto-rotates.
   public_cert_name = local.public_cert_name
 
+  # In-VNet path: private frontend + Private DNS zone for the internal domain,
+  # served with its own LE cert. See locals.internal_domain_name.
+  internal_domain_name = local.internal_domain_name
+  internal_cert_name   = local.internal_cert_name
+
   domain_name = var.domain_name
 
   tags = var.tags
@@ -173,23 +178,52 @@ resource "azurerm_role_assignment" "acmebot_kv_certificates" {
 locals {
   # KV certificate name for the public wildcard cert (dots are not allowed).
   public_cert_name = replace(var.domain_name, ".", "-")
+
+  # Internal-only domain for in-VNet consumers (ECA-986 bots): first label gets
+  # an "-int" suffix (sandbox2.yesy.dev -> sandbox2-int.yesy.dev). A REAL
+  # subdomain of the public zone — so Let's Encrypt can issue for it via
+  # DNS-01 — but resolvable ONLY through the Private DNS zone linked to the
+  # VNet (never published in public DNS): traffic goes straight to the App
+  # Gateway's private frontend, skipping Cloudflare and the public internet.
+  internal_domain_name = replace(var.domain_name, "/^([^.]+)/", "$1-int")
+  internal_cert_name   = replace(local.internal_domain_name, ".", "-")
 }
 
 # One-time first issuance, encoded in terraform so a fresh environment needs no
 # manual API call. Idempotent: acmebot upserts by certificate name; renewals
 # afterwards are handled by acmebot's own timer (no terraform involved).
 resource "null_resource" "acmebot_first_issuance" {
+  for_each = {
+    (local.public_cert_name)   = var.domain_name
+    (local.internal_cert_name) = local.internal_domain_name
+  }
+
   triggers = {
-    certificate = local.public_cert_name
+    certificate = each.key
   }
 
   provisioner "local-exec" {
     command = <<-EOT
       set -euo pipefail
-      FKEY=$(az functionapp keys list -g ${azurerm_resource_group.main.name} -n func-${trimsuffix(var.prefix, "-")}-acmebot --query "functionKeys.default" -o tsv)
-      curl -sf -m 180 -X POST "https://func-${trimsuffix(var.prefix, "-")}-acmebot.azurewebsites.net/api/certificate" \
+      FUNC="func-${trimsuffix(var.prefix, "-")}-acmebot"
+      FKEY=$(az functionapp keys list -g ${azurerm_resource_group.main.name} -n "$FUNC" --query "functionKeys.default" -o tsv)
+      BASE="https://$FUNC.azurewebsites.net/api"
+      # Skip if the cert already exists (re-runs must not burn LE duplicate quota).
+      if curl -sf -m 30 "$BASE/certificates" -H "x-functions-key: $FKEY" | grep -q '"name":"${each.key}"'; then
+        echo "certificate ${each.key} already present"; exit 0
+      fi
+      curl -sf -m 180 -X POST "$BASE/certificate" \
         -H "x-functions-key: $FKEY" -H "Content-Type: application/json" \
-        -d '{"CertificateName":"${local.public_cert_name}","DnsNames":["${var.domain_name}","*.${var.domain_name}"]}'
+        -d '{"CertificateName":"${each.key}","DnsNames":["${each.value}","*.${each.value}"]}'
+      # Issuance is async (202): wait until the cert lands in Key Vault so that
+      # anything referencing the KV secret (App Gateway) applies after it exists.
+      for i in $(seq 1 30); do
+        sleep 10
+        if curl -sf -m 30 "$BASE/certificates" -H "x-functions-key: $FKEY" | grep -q '"name":"${each.key}"'; then
+          echo "certificate ${each.key} issued"; exit 0
+        fi
+      done
+      echo "timed out waiting for certificate ${each.key}" >&2; exit 1
     EOT
   }
 
