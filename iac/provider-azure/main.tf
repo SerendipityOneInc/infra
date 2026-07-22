@@ -36,10 +36,6 @@ terraform {
       version = ">= 4.0"
     }
 
-    pkcs12 = {
-      source  = "chilicat/pkcs12"
-      version = ">= 0.2.5"
-    }
   }
 }
 
@@ -116,6 +112,9 @@ module "network" {
   # routing. Must match the job-ingress ingress_port below.
   ingress_backend_port = local.ingress_port
 
+  # LE cert issued/renewed into KV by module.acmebot; the gateway auto-rotates.
+  public_cert_name = local.public_cert_name
+
   domain_name = var.domain_name
 
   tags = var.tags
@@ -134,6 +133,67 @@ module "cloudflare" {
 
   domain_name    = var.domain_name
   lb_frontend_ip = module.network.appgw_public_ip
+}
+
+# ----------------------------------------------------------------------------
+# Automated public TLS: keyvault-acmebot (timer-driven Azure Function) issues
+# and renews the Let's Encrypt cert for <domain> + *.<domain> via Cloudflare
+# DNS-01 straight into Key Vault. The App Gateway references the KV secret
+# WITHOUT a version and polls KV (~4h), so rotation needs no human and no
+# terraform apply. First issuance is a one-time API call (see runbook):
+#   curl -X POST "https://<func>.azurewebsites.net/api/certificate" \
+#     -H "x-functions-key: <api_key>" -H "Content-Type: application/json" \
+#     -d '{"CertificateName":"<name>","DnsNames":["<domain>","*.<domain>"]}'
+# ----------------------------------------------------------------------------
+module "acmebot" {
+  source  = "shibayan/keyvault-acmebot/azurerm"
+  version = "3.1.4"
+
+  app_base_name       = "${trimsuffix(var.prefix, "-")}-acmebot"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = var.location
+  mail_address        = var.acmebot_mail_address
+  vault_uri           = module.init.key_vault_uri
+
+  cloudflare = {
+    api_token = module.init.cloudflare.token
+  }
+
+  additional_tags = var.tags
+}
+
+# The acmebot function's managed identity manages certificates in our KV
+# (RBAC-mode vault, so a role assignment rather than an access policy).
+resource "azurerm_role_assignment" "acmebot_kv_certificates" {
+  scope                = module.init.key_vault_id
+  role_definition_name = "Key Vault Certificates Officer"
+  principal_id         = module.acmebot.principal_id
+}
+
+locals {
+  # KV certificate name for the public wildcard cert (dots are not allowed).
+  public_cert_name = replace(var.domain_name, ".", "-")
+}
+
+# One-time first issuance, encoded in terraform so a fresh environment needs no
+# manual API call. Idempotent: acmebot upserts by certificate name; renewals
+# afterwards are handled by acmebot's own timer (no terraform involved).
+resource "null_resource" "acmebot_first_issuance" {
+  triggers = {
+    certificate = local.public_cert_name
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -euo pipefail
+      FKEY=$(az functionapp keys list -g ${azurerm_resource_group.main.name} -n func-${trimsuffix(var.prefix, "-")}-acmebot --query "functionKeys.default" -o tsv)
+      curl -sf -m 180 -X POST "https://func-${trimsuffix(var.prefix, "-")}-acmebot.azurewebsites.net/api/certificate" \
+        -H "x-functions-key: $FKEY" -H "Content-Type: application/json" \
+        -d '{"CertificateName":"${local.public_cert_name}","DnsNames":["${var.domain_name}","*.${var.domain_name}"]}'
+    EOT
+  }
+
+  depends_on = [azurerm_role_assignment.acmebot_kv_certificates]
 }
 
 resource "random_password" "volume_token_key" {

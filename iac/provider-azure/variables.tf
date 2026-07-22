@@ -35,6 +35,12 @@ variable "domain_name" {
   description = "The domain name where e2b will run"
 }
 
+variable "acmebot_mail_address" {
+  type        = string
+  description = "ACME (Let's Encrypt) account email for keyvault-acmebot expiry notices"
+  default     = "allenz@srp.one"
+}
+
 variable "environment" {
   type        = string
   description = "The deployment environment (dev, staging, prod)"

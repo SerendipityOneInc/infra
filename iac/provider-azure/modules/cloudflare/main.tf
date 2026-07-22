@@ -64,20 +64,17 @@ resource "cloudflare_record" "direct" {
   comment = var.comment
 }
 
-# Per-sandbox wildcard: proxied (orange cloud). The App Gateway presents a
-# Cloudflare Origin CA cert, which only Cloudflare trusts — a grey-cloud
-# (direct) wildcard would fail public TLS verification in the e2b SDK (the SDK
-# hardcodes https for the sandbox data plane; plain-HTTP internal access is not
-# an option). Trade-off: sandbox streams idle >100s can be cut by Cloudflare
-# (mitigate app-side with background:true / output heartbeats).
-# TODO(harden): Let's Encrypt public wildcard on the App Gateway + private
-# frontend/Private DNS for in-VNet consumers, then flip this back to grey.
+# Per-sandbox wildcard: DNS-only (grey cloud), straight at the App Gateway.
+# The gateway serves a publicly-trusted Let's Encrypt cert (issued/renewed by
+# keyvault-acmebot into Key Vault), so direct SDK connections verify cleanly —
+# and the sandbox data plane never touches Cloudflare, which removes the 100s
+# proxy idle-timeout entirely (long silent command streams, PTY sessions).
 resource "cloudflare_record" "wildcard" {
   zone_id = data.cloudflare_zone.domain.zone_id
   name    = "*.${var.domain_name}"
   type    = "A"
   value   = var.lb_frontend_ip
-  proxied = true
-  ttl     = 1 # Cloudflare requires ttl=1 ("automatic") for proxied records
+  proxied = false
+  ttl     = var.wildcard_ttl
   comment = var.comment
 }

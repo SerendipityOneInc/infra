@@ -70,6 +70,11 @@ variable "ingress_http_port" {
   default     = 80
 }
 
+variable "public_cert_name" {
+  type        = string
+  description = "Key Vault certificate name (issued/renewed by keyvault-acmebot) whose backing secret the App Gateway references versionlessly for automatic rotation."
+}
+
 variable "ingress_backend_port" {
   type        = number
   description = "TCP port the in-cluster Traefik ingress entrypoint listens on (job-ingress ingress_port). The App Gateway forwards the default (api./sandbox/docker.) + grpc-api. traffic here; Traefik then does dynamic host-based routing (api service, sandboxes via Consul catalog). Traefik serves /ping on this port for the health probe. Must equal local.ingress_port in provider-azure/main.tf."

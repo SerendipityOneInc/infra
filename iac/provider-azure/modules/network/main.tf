@@ -12,10 +12,6 @@ terraform {
       source  = "hashicorp/tls"
       version = ">= 4.0"
     }
-    pkcs12 = {
-      source  = "chilicat/pkcs12"
-      version = ">= 0.2.5"
-    }
   }
 }
 
@@ -319,38 +315,32 @@ resource "azurerm_subnet_network_security_group_association" "appgw" {
 }
 
 # ---
-# Origin certificate for the App Gateway HTTPS listeners. The zone runs Cloudflare
-# "Full (strict)", which validates the origin cert against the Cloudflare Origin
-# CA, so we present a Cloudflare Origin CA certificate (SANs cover
-# sandbox2.<domain> + *.sandbox2.<domain>). The cert + key live in Key Vault
-# (secrets appgw-origin-cert / appgw-origin-key, populated out-of-band); terraform
-# reads them and packs a PFX for the gateway ssl_certificate. Rotate by replacing
-# the KV secrets and re-applying.
+# Public TLS for the App Gateway listeners. keyvault-acmebot (provider root)
+# issues + renews a Let's Encrypt cert for <domain> + *.<domain> into Key
+# Vault; the gateway references the certificate's backing secret WITHOUT a
+# version and polls KV (~4h), so rotation is fully automatic — no humans, no
+# terraform apply in the renewal loop. Publicly trusted, so it satisfies both
+# Cloudflare "Full (strict)" on proxied hosts and direct (grey-cloud) SDK
+# connections to the sandbox wildcard. Replaces the Cloudflare Origin CA +
+# pkcs12 flow. Fresh-environment ordering: apply module.acmebot + the first
+# issuance BEFORE this module's gateway references the secret.
 # ---
-resource "random_password" "appgw_cert" {
-  length  = 24
-  special = false
-}
-
 data "azurerm_key_vault" "main" {
   name                = var.key_vault_name
   resource_group_name = var.resource_group_name
 }
 
-data "azurerm_key_vault_secret" "appgw_origin_cert" {
-  name         = "appgw-origin-cert"
-  key_vault_id = data.azurerm_key_vault.main.id
+resource "azurerm_user_assigned_identity" "appgw" {
+  name                = "${var.prefix}appgw"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  tags                = var.tags
 }
 
-data "azurerm_key_vault_secret" "appgw_origin_key" {
-  name         = "appgw-origin-key"
-  key_vault_id = data.azurerm_key_vault.main.id
-}
-
-resource "pkcs12_from_pem" "appgw" {
-  password        = random_password.appgw_cert.result
-  cert_pem        = data.azurerm_key_vault_secret.appgw_origin_cert.value
-  private_key_pem = data.azurerm_key_vault_secret.appgw_origin_key.value
+resource "azurerm_role_assignment" "appgw_kv_secrets" {
+  scope                = data.azurerm_key_vault.main.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_user_assigned_identity.appgw.principal_id
 }
 
 resource "azurerm_public_ip" "appgw" {
@@ -423,10 +413,16 @@ resource "azurerm_application_gateway" "main" {
     port = 80
   }
 
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.appgw.id]
+  }
+
   ssl_certificate {
-    name     = local.appgw_ssl_cert
-    data     = pkcs12_from_pem.appgw.result
-    password = random_password.appgw_cert.result
+    name = local.appgw_ssl_cert
+    # Versionless secret reference: the gateway polls KV and picks up renewed
+    # certificate versions automatically.
+    key_vault_secret_id = "${data.azurerm_key_vault.main.vault_uri}secrets/${var.public_cert_name}"
   }
 
   # ---- backend pools (empty; VMSS instances register via their ipconfig) ----
@@ -575,4 +571,8 @@ resource "azurerm_application_gateway" "main" {
     # VMSS instances register into the backend pools out-of-band; don't fight it.
     ignore_changes = [backend_address_pool]
   }
+
+  # The gateway validates the KV secret reference at update time; make sure its
+  # identity can already read secrets.
+  depends_on = [azurerm_role_assignment.appgw_kv_secrets]
 }
