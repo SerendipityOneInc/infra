@@ -295,9 +295,6 @@ REFRESH
   sed -i "s|__ACR_LOGIN_SERVER__|${acr_login_server}|g" "$refresh_script"
   chmod +x "$refresh_script"
 
-  # Initial generation must succeed before Nomad pulls any ACR image.
-  "$refresh_script"
-
   cat >/etc/systemd/system/acr-auth-refresh.service <<'UNIT'
 [Unit]
 Description=Refresh static ACR docker auth for Nomad
@@ -317,8 +314,26 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 
+  # Enable the timer BEFORE the initial mint: even if the first mint fails, the
+  # timer re-runs within OnBootSec and self-heals.
   systemctl daemon-reload
   systemctl enable --now acr-auth-refresh.timer
+
+  # Initial mint with bounded retries: right after boot the IMDS/MSI -> AAD ->
+  # ACR token chain can be transiently unavailable (observed: first mint failed
+  # seconds after boot and, without retries, took Nomad startup down with it).
+  # On final failure, warn and continue: Nomad still starts, image pulls fail
+  # until the timer's next run refreshes the auth, then Nomad retries pulls.
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    if "$refresh_script"; then
+      log_info "ACR docker auth minted (attempt $attempt)"
+      return
+    fi
+    log_error "ACR auth mint failed (attempt $attempt/6); retrying in 10s"
+    sleep 10
+  done
+  log_error "ACR auth mint failed after 6 attempts; relying on acr-auth-refresh.timer to self-heal"
 }
 
 function run {
