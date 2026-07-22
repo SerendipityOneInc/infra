@@ -67,6 +67,19 @@ job "template-manager" {
       port     = "${port}"
       provider = "nomad"
 
+      # Route api.<domain>/upload to this server's HMAC proxy-upload endpoint.
+      # Storage providers whose native signed URLs the e2b SDK cannot bare-PUT
+      # to (Azure: mandatory x-ms-blob-type header a SAS cannot pre-sign) hand
+      # out URLs pointing here — see orchestrator pkg/localupload. The longer
+      # rule outranks the api service's HostRegexp router via Traefik's
+      # rule-length priority. Inert on GCS/S3 providers: nothing points
+      # clients at this route.
+      tags = [
+        "traefik.enable=true",
+        "traefik.http.routers.template-manager-upload.rule=HostRegexp(`api.{domain:.+}`) && PathPrefix(`/upload`)",
+        "traefik.http.services.template-manager.loadbalancer.server.port=${port}",
+      ]
+
       check {
         type         = "http"
         path         = "/health"

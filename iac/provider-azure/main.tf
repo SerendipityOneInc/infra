@@ -379,6 +379,11 @@ locals {
     CLICKHOUSE_CONNECTION_STRING = local.clickhouse_connection_string
     GIN_MODE                     = "release"
     LAUNCH_DARKLY_API_KEY        = module.init.launch_darkly_api_key
+    # Azure uploads route through the HMAC proxy endpoint on this server (the
+    # e2b SDK cannot bare-PUT to an Azure SAS URL — mandatory x-ms-blob-type
+    # header). Traefik routes api.<domain>/upload here (job-template-manager
+    # service tags), so the URL works for both the public and internal domains.
+    LOCAL_UPLOAD_BASE_URL = "https://api.${var.domain_name}"
   }, var.template_manager_env_vars)
 }
 

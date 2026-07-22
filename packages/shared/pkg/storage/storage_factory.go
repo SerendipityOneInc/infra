@@ -21,7 +21,10 @@ func WithLimiter(limiter *limit.Limiter) Option {
 	return func(o *providerOptions) { o.limiter = limiter }
 }
 
-// WithLocalUpload configures the filesystem provider to sign upload URLs.
+// WithLocalUpload configures HMAC proxy-upload URL signing. Used by the
+// filesystem provider (dev) and by Azure (the e2b SDK cannot bare-PUT to an
+// Azure SAS URL — mandatory x-ms-blob-type header — so uploads route through
+// the localupload proxy handler instead).
 func WithLocalUpload(uploadBaseURL string, hmacKey []byte) Option {
 	return func(o *providerOptions) {
 		o.uploadBaseURL = uploadBaseURL
@@ -42,7 +45,15 @@ func NewProvider(ctx context.Context, spec Spec, opts ...Option) (StorageProvide
 	case AWSStorageProvider:
 		return newAWSStorage(ctx, spec, o.limiter)
 	case AzureStorageProvider:
-		return newAzureStorage(ctx, spec, o.limiter)
+		azureProvider, err := newAzureStorage(ctx, spec, o.limiter)
+		if err != nil {
+			return nil, err
+		}
+		if o.uploadBaseURL != "" && o.hmacKey != nil {
+			azureProvider.SetProxyUpload(o.uploadBaseURL, o.hmacKey)
+		}
+
+		return azureProvider, nil
 	case GCPStorageProvider:
 		return NewGCP(ctx, spec.Bucket, o.limiter)
 	}

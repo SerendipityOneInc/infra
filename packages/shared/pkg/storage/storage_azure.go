@@ -52,6 +52,16 @@ type azureStorage struct {
 	// credential.
 	sharedKey *azblob.SharedKeyCredential
 
+	// Proxy-upload endpoint (WithLocalUpload). When set, UploadSignedURL
+	// returns an HMAC-signed URL to this endpoint instead of a blob SAS: the
+	// e2b SDK performs a bare PUT against upload URLs, but Azure's Put Blob
+	// REQUIRES an x-ms-blob-type request header that a SAS cannot pre-sign,
+	// so a bare PUT to a SAS URL always fails with 400 MissingRequiredHeader.
+	// The proxy (localupload.NewProviderHandler) accepts the bare PUT and
+	// writes through this provider instead.
+	uploadURL string
+	hmacKey   []byte
+
 	limiter *limit.Limiter
 }
 
@@ -144,6 +154,12 @@ func newAzureStorageFromService(svc *service.Client, sharedKey *azblob.SharedKey
 		sharedKey:     sharedKey,
 		limiter:       limiter,
 	}
+}
+
+// SetProxyUpload enables HMAC proxy-upload URLs (see the struct comment).
+func (s *azureStorage) SetProxyUpload(uploadBaseURL string, hmacKey []byte) {
+	s.uploadURL = strings.TrimSuffix(uploadBaseURL, "/")
+	s.hmacKey = hmacKey
 }
 
 // azureServiceURL resolves an account name or full service URL into a blob
@@ -248,6 +264,16 @@ func (s *azureStorage) GetDetails() string {
 }
 
 func (s *azureStorage) UploadSignedURL(ctx context.Context, path string, ttl time.Duration) (string, error) {
+	// Proxy mode: hand out an HMAC-signed URL to our upload endpoint (the e2b
+	// SDK cannot bare-PUT to an Azure SAS URL — see the struct comment).
+	if s.uploadURL != "" && s.hmacKey != nil {
+		expiresSec := time.Now().Add(ttl).Unix()
+		token := ComputeUploadHMAC(s.hmacKey, path, expiresSec)
+
+		return fmt.Sprintf("%s/upload?path=%s&expires=%d&token=%s",
+			s.uploadURL, url.QueryEscape(path), expiresSec, token), nil
+	}
+
 	now := time.Now().UTC()
 	// A small clock-skew allowance on the start time avoids the SAS being
 	// rejected as not-yet-valid by the service.

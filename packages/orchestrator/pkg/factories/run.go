@@ -1054,8 +1054,17 @@ func setupBuildStorage(ctx context.Context, limiter *limit.Limiter, orchConfig c
 
 	var uploadHandler *localupload.Handler
 
-	if spec.Provider == storage.LocalStorageProvider {
-		hmacKey := make([]byte, 32)
+	var hmacKey []byte
+	proxyUploads := spec.Provider == storage.LocalStorageProvider ||
+		// The e2b SDK bare-PUTs to upload URLs; Azure's Put Blob requires an
+		// x-ms-blob-type header a SAS cannot pre-sign, so Azure uploads must
+		// route through the same HMAC proxy endpoint the fs provider uses.
+		// LOCAL_UPLOAD_BASE_URL must then be a client-reachable URL (e.g.
+		// https://api.<domain>, routed to this server by the ingress).
+		(spec.Provider == storage.AzureStorageProvider && orchConfig.LocalUploadBaseURL != "")
+
+	if proxyUploads {
+		hmacKey = make([]byte, 32)
 		if _, err := rand.Read(hmacKey); err != nil {
 			return nil, nil, fmt.Errorf("generate HMAC key: %w", err)
 		}
@@ -1066,16 +1075,23 @@ func setupBuildStorage(ctx context.Context, limiter *limit.Limiter, orchConfig c
 		}
 
 		opts = append(opts, storage.WithLocalUpload(uploadBaseURL, hmacKey))
-		uploadHandler = localupload.NewHandler(spec.BasePath, hmacKey)
 
-		logger.L().Info(ctx, "Local upload endpoint enabled for filesystem storage",
+		logger.L().Info(ctx, "Proxy upload endpoint enabled",
 			zap.String("upload_base_url", uploadBaseURL),
-			zap.String("base_path", spec.BasePath))
+			zap.String("storage_provider", string(spec.Provider)))
 	}
 
 	provider, err := storage.NewProvider(ctx, spec, opts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create build cache storage provider: %w", err)
+	}
+
+	if proxyUploads {
+		if spec.Provider == storage.LocalStorageProvider {
+			uploadHandler = localupload.NewHandler(spec.BasePath, hmacKey)
+		} else {
+			uploadHandler = localupload.NewProviderHandler(provider, hmacKey)
+		}
 	}
 
 	return provider, uploadHandler, nil
