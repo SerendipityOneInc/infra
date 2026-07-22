@@ -114,6 +114,22 @@ ifeq ($(PROVIDER),aws)
 	rm -rf ./.kernels
 	rm -rf ./.firecrackers
 	rm -rf ./.busybox
+else ifeq ($(PROVIDER),azure)
+	# Same download path as AWS (anonymous read of e2b's public GCS bucket via the
+	# S3-compat endpoint), then upload into the per-role blob containers created by
+	# provider-azure/init. AZURE_STORAGE_ACCOUNT comes from .env.azure.
+	mkdir -p ./.kernels
+	mkdir -p ./.firecrackers
+	mkdir -p ./.busybox
+	aws s3 cp s3://e2b-prod-public-builds/kernels/ ./.kernels/ --recursive --no-sign-request --endpoint-url https://storage.googleapis.com
+	aws s3 cp s3://e2b-prod-public-builds/firecrackers/ ./.firecrackers/ --recursive --no-sign-request --endpoint-url https://storage.googleapis.com
+	aws s3 cp s3://e2b-prod-public-builds/busybox/ ./.busybox/ --recursive --no-sign-request --endpoint-url https://storage.googleapis.com
+	az storage blob upload-batch --account-name $(AZURE_STORAGE_ACCOUNT) --destination fc-kernels --source ./.kernels --auth-mode login --overwrite --output none
+	az storage blob upload-batch --account-name $(AZURE_STORAGE_ACCOUNT) --destination fc-versions --source ./.firecrackers --auth-mode login --overwrite --output none
+	az storage blob upload-batch --account-name $(AZURE_STORAGE_ACCOUNT) --destination fc-busybox --source ./.busybox --auth-mode login --overwrite --output none
+	rm -rf ./.kernels
+	rm -rf ./.firecrackers
+	rm -rf ./.busybox
 else
 	gsutil cp -r gs://e2b-prod-public-builds/kernels/* gs://$(GCP_BUCKET_PREFIX)fc-kernels/
 	gsutil cp -r gs://e2b-prod-public-builds/firecrackers/* gs://$(GCP_BUCKET_PREFIX)fc-versions/
