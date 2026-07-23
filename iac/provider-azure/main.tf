@@ -415,7 +415,7 @@ module "cluster" {
   #     node pool; it reaches sandboxes on the orch client pool internally, so the
   #     orch client/build pools are NOT App Gateway backends).
   api_appgw_backend_pool_ids    = [module.network.ingress_backend_pool_id, module.network.grpc_backend_pool_id]
-  api_lb_backend_pool_ids       = [module.network.dataplane_backend_pool_id]
+  api_lb_backend_pool_ids       = module.network.dataplane_backend_pool_ids
   client_appgw_backend_pool_ids = []
   server_appgw_backend_pool_ids = [module.network.nomad_backend_pool_id]
 

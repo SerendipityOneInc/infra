@@ -101,7 +101,7 @@ output "dataplane_private_ip" {
   value       = local.dataplane_private_fe_ip
 }
 
-output "dataplane_backend_pool_id" {
-  description = "Backend pool the api/ingress VMSS joins so the L4 LB reaches Traefik on 443."
-  value       = azurerm_lb_backend_address_pool.dataplane.id
+output "dataplane_backend_pool_ids" {
+  description = "Backend pools (public + internal LB) the api/ingress VMSS joins so both L4 LBs reach Traefik on 443."
+  value       = [azurerm_lb_backend_address_pool.dataplane_public.id, azurerm_lb_backend_address_pool.dataplane_internal.id]
 }
