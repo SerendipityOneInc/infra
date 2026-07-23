@@ -199,6 +199,8 @@ module "build" {
   consul_dns_request_token     = var.consul_dns_request_token_secret
 
   acr_login_server = var.acr_login_server
+  key_vault_name   = var.key_vault_name
+  juicefs_volumes  = var.juicefs_volumes
 
   fc_env_pipeline_container_name = var.fc_env_pipeline_container_name
   fc_kernels_container_name      = var.fc_kernels_container_name
@@ -247,6 +249,8 @@ module "client" {
   consul_dns_request_token     = var.consul_dns_request_token_secret
 
   acr_login_server = var.acr_login_server
+  key_vault_name   = var.key_vault_name
+  juicefs_volumes  = var.juicefs_volumes
 
   fc_env_pipeline_container_name = var.fc_env_pipeline_container_name
   fc_kernels_container_name      = var.fc_kernels_container_name

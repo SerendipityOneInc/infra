@@ -255,6 +255,8 @@ locals {
 locals {
   redis_port            = 6379
   ingress_port          = 8080
+  juicefs_volume_type   = "juicefs"
+  juicefs_mount_path    = "/mnt/persistent-volume-types/juicefs"
   ingress_internal_port = 9435
   nomad_port            = 4646
   clickhouse_port       = 9000
@@ -275,9 +277,11 @@ locals {
   # so values that themselves contain `"` characters (like a JSON blob)
   # must have those quotes pre-escaped to produce valid HCL.
   api_env_vars = merge({
-    ENVIRONMENT                    = var.environment
-    GIN_MODE                       = "release"
-    DOMAIN_NAME                    = var.domain_name
+    ENVIRONMENT = var.environment
+    GIN_MODE    = "release"
+    DOMAIN_NAME = var.domain_name
+    # Volume type new volumes default to (JuiceFS). Empty if no volume mounted.
+    DEFAULT_PERSISTENT_VOLUME_TYPE = length(var.juicefs_volumes) > 0 ? local.juicefs_volume_type : ""
     NOMAD_TOKEN                    = module.init.cluster.nomad_acl_token
     ORCHESTRATOR_PORT              = tostring(var.orchestrator_port)
     API_INTERNAL_GRPC_PORT         = tostring(var.api_internal_grpc_port)
@@ -361,6 +365,11 @@ locals {
     ARTIFACTS_REGISTRY_PROVIDER  = "AZURE_ACR"
     AZURE_CONTAINER_REGISTRY     = module.init.acr_login_server
     AZURE_DOCKER_REPOSITORY_NAME = module.init.custom_environments_repository_name
+
+    # JuiceFS persistent-volume type -> host mount (client nodes mount it in
+    # start-client.sh at the same path). The orchestrator NFS proxy exports
+    # subtrees from here; the volume type name matches DEFAULT_PERSISTENT_VOLUME_TYPE.
+    PERSISTENT_VOLUME_MOUNTS = length(var.juicefs_volumes) > 0 ? "${local.juicefs_volume_type}:${local.juicefs_mount_path}" : ""
   }, var.orchestrator_env_vars)
 
   template_manager_env_vars = merge({
@@ -402,6 +411,12 @@ module "cluster" {
   prefix              = var.prefix
   resource_group_name = azurerm_resource_group.main.name
   location            = var.location
+
+  # JuiceFS persistent volumes: client/build nodes mount these at boot (token
+  # from Key Vault via the node MI). mount_path lines up with the orchestrator
+  # PERSISTENT_VOLUME_MOUNTS env above.
+  key_vault_name  = var.key_vault_name
+  juicefs_volumes = var.juicefs_volumes
 
   identity_id        = module.init.identity_id
   identity_client_id = module.init.identity_client_id

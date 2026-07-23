@@ -23,6 +23,8 @@ locals {
     STORAGE_ACCOUNT    = var.storage_account_name
     SETUP_CONTAINER    = var.setup_container_name
     IDENTITY_CLIENT_ID = var.identity_client_id
+    KEY_VAULT_NAME     = var.key_vault_name
+    JUICEFS_VOLUMES    = var.juicefs_volumes
 
     NOMAD_TOKEN                  = var.nomad_acl_token
     CONSUL_TOKEN                 = var.consul_acl_token

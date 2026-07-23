@@ -111,16 +111,6 @@ echo "$SWAPFILE none swap sw 0 0" | tee -a /etc/fstab
 sysctl vm.swappiness=10
 sysctl vm.vfs_cache_pressure=50
 
-# ---------------------------------------------------------------------------
-# TODO(azure-juicefs, Phase C): mount the JuiceFS-backed persistent volume(s)
-# here. Azure JuiceFS is a SEPARATE deployment delivered later; do NOT invent
-# mount commands. On GCP the client fetches the EE client, runs `juicefs auth`,
-# then `juicefs mount <vol> <path> --subdir ... --cache-group ...` with a token
-# read from Secret Manager. On Azure the metadata engine, object storage and
-# token source are not provisioned yet. The rest of start-client works without
-# it.
-# ---------------------------------------------------------------------------
-
 # Add tmpfs for snapshotting
 mkdir -p /mnt/snapshot-cache
 mount -t tmpfs -o size=65G tmpfs /mnt/snapshot-cache
@@ -200,6 +190,25 @@ mount_blob_container "${FC_ENV_PIPELINE_CONTAINER}" /fc-envd
 mount_blob_container "${FC_KERNELS_CONTAINER}" /fc-kernels
 mount_blob_container "${FC_VERSIONS_CONTAINER}" /fc-versions
 mount_blob_container "${FC_BUSYBOX_CONTAINER}" /fc-busybox
+
+# ---------------------------------------------------------------------------
+# JuiceFS EE persistent volume(s). Mirrors provider-gcp start-client.sh: fetch
+# the EE client from the console, `juicefs auth` with a token, then mount at
+# <mount_path> (== PERSISTENT_VOLUME_MOUNTS[type] the orchestrator exports
+# subtrees from). Azure specifics: token comes from Key Vault via the node
+# Managed Identity (az login done above), and object access to the Blob backend
+# is keyless (DefaultAzureCredential / MI — validated: no access key needed).
+# ---------------------------------------------------------------------------
+%{ for vol in JUICEFS_VOLUMES ~}
+if ! command -v juicefs >/dev/null 2>&1; then
+  curl -fsSL "${vol.console_url}/static/juicefs" -o /usr/local/bin/juicefs
+  chmod +x /usr/local/bin/juicefs
+fi
+juicefs_token=$(az keyvault secret show --vault-name "${KEY_VAULT_NAME}" --name "${vol.token_secret}" --query value -o tsv)
+mkdir -p "${vol.mount_path}"
+BASE_URL="${vol.console_url}" juicefs auth "${vol.volume}" --token "$juicefs_token"
+juicefs mount "${vol.volume}" "${vol.mount_path}" --subdir="${vol.subdir}" --cache-group="${vol.cache_group}" -d ${vol.mount_options}
+%{ endfor ~}
 
 # Download the Consul/Nomad runner scripts from the setup Blob container.
 az storage blob download --account-name "${STORAGE_ACCOUNT}" --container-name "${SETUP_CONTAINER}" \

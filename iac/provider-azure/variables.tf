@@ -391,3 +391,17 @@ variable "e2b_database_name" {
   description = "Name of the database e2b creates on the existing Postgres server."
   default     = "e2b"
 }
+
+variable "juicefs_volumes" {
+  type = list(object({
+    console_url   = string
+    token_secret  = string
+    volume        = string
+    mount_path    = string
+    subdir        = string
+    cache_group   = string
+    mount_options = string
+  }))
+  description = "JuiceFS EE volumes auto-mounted on client/build nodes at boot. token_secret is a Key Vault secret name (read via node MI); object access keyless via MI. mount_path must equal local.juicefs_mount_path so the orchestrator's PERSISTENT_VOLUME_MOUNTS lines up."
+  default     = []
+}

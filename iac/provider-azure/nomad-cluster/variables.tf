@@ -247,3 +247,21 @@ variable "api_lb_backend_pool_ids" {
   description = "L4 data-plane LB backend pool ids the api/ingress VMSS joins (Traefik on 443 for the sandbox data plane)."
   default     = []
 }
+
+variable "key_vault_name" {
+  type    = string
+  default = ""
+}
+
+variable "juicefs_volumes" {
+  type = list(object({
+    console_url   = string
+    token_secret  = string
+    volume        = string
+    mount_path    = string
+    subdir        = string
+    cache_group   = string
+    mount_options = string
+  }))
+  default = []
+}

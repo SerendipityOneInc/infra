@@ -186,3 +186,23 @@ variable "scripts_path" {
   type    = string
   default = ""
 }
+
+variable "key_vault_name" {
+  type        = string
+  description = "Key Vault the node MI reads the JuiceFS token(s) from."
+  default     = ""
+}
+
+variable "juicefs_volumes" {
+  type = list(object({
+    console_url   = string
+    token_secret  = string
+    volume        = string
+    mount_path    = string
+    subdir        = string
+    cache_group   = string
+    mount_options = string
+  }))
+  description = "JuiceFS EE volumes auto-mounted at boot. token_secret is a Key Vault secret name (read via the node MI); object access is keyless via the MI."
+  default     = []
+}
