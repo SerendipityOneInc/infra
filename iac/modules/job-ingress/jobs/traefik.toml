@@ -29,6 +29,34 @@
       requestAcceptGraceTimeout = "30s"
       # After the grace window, give active connections up to 24h to finish before forcefully closing them
       graceTimeOut = "24h"
+%{ if tls_enabled ~}
+
+  # TLS-terminating entrypoint for the sandbox data plane behind an L4
+  # passthrough LB. HTTP/2 is negotiated via ALPN and carried h2c to the
+  # backend, so bidirectional streams (PTY) work end to end.
+  [entryPoints.websecure]
+    address = ":${ingress_secure_port}"
+    asDefault = false
+
+    [entryPoints.websecure.http.tls]
+      certResolver = "le"
+%{ for d in acme_domains ~}
+      [[entryPoints.websecure.http.tls.domains]]
+        main = "${d.main}"
+        sans = [${join(", ", [for s in d.sans : "\"${s}\""])}]
+%{ endfor ~}
+
+    [entryPoints.websecure.transport.lifecycle]
+      requestAcceptGraceTimeout = "30s"
+      graceTimeOut = "24h"
+
+[certificatesResolvers.le.acme]
+  email = "${acme_email}"
+  storage = "/acme/acme.json"
+  [certificatesResolvers.le.acme.dnsChallenge]
+    provider = "cloudflare"
+    resolvers = ["1.1.1.1:53", "8.8.8.8:53"]
+%{ endif ~}
 
 [metrics]
   [metrics.otlp]

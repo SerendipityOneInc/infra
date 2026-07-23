@@ -109,3 +109,9 @@ variable "scripts_path" {
   type    = string
   default = ""
 }
+
+variable "lb_backend_pool_ids" {
+  type        = list(string)
+  description = "L4 load balancer backend pool ids the api/ingress VMSS joins (sandbox data plane; Traefik on 443)."
+  default     = []
+}

@@ -241,3 +241,9 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "api_lb_backend_pool_ids" {
+  type        = list(string)
+  description = "L4 data-plane LB backend pool ids the api/ingress VMSS joins (Traefik on 443 for the sandbox data plane)."
+  default     = []
+}

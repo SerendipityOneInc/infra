@@ -58,4 +58,9 @@ systemctl restart systemd-resolved
     --gossip-encryption-key "${CONSUL_GOSSIP_ENCRYPTION_KEY}" \
     --dns-request-token "${CONSUL_DNS_REQUEST_TOKEN}" &
 
-/opt/nomad/bin/run-nomad.sh --client --consul-token "${CONSUL_TOKEN}" --node-pool "${NODE_POOL}" --acr-login-server "${ACR_LOGIN_SERVER}" &
+# Persistent host dir for Traefik's ACME cert store (survives ingress reschedules
+# so Let's Encrypt isn't re-hit each time). Exposed to Nomad as host_volume "traefik-acme".
+mkdir -p /opt/traefik-acme
+chmod 700 /opt/traefik-acme
+
+/opt/nomad/bin/run-nomad.sh --client --consul-token "${CONSUL_TOKEN}" --node-pool "${NODE_POOL}" --acr-login-server "${ACR_LOGIN_SERVER}" --host-volume "traefik-acme:/opt/traefik-acme" &

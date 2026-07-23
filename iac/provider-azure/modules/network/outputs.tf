@@ -90,3 +90,18 @@ output "internal_domain_name" {
   description = "Internal-only domain served by the private frontend (set E2B_DOMAIN to this for in-VNet consumers)."
   value       = var.internal_domain_name
 }
+
+output "dataplane_public_ip" {
+  description = "Public IP of the sandbox data-plane L4 LB (external *.<domain> wildcard points here)."
+  value       = azurerm_public_ip.dataplane.ip_address
+}
+
+output "dataplane_private_ip" {
+  description = "Private frontend IP of the data-plane L4 LB (internal *.<internal_domain> wildcard points here via Private DNS)."
+  value       = local.dataplane_private_fe_ip
+}
+
+output "dataplane_backend_pool_id" {
+  description = "Backend pool the api/ingress VMSS joins so the L4 LB reaches Traefik on 443."
+  value       = azurerm_lb_backend_address_pool.dataplane.id
+}

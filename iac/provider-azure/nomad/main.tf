@@ -92,6 +92,17 @@ module "ingress" {
   consul_token = var.consul_acl_token
 
   otel_collector_grpc_endpoint = "localhost:${var.otel_collector_grpc_port}"
+
+  # TLS-terminating websecure entrypoint for the sandbox data plane (L4 LB path).
+  # Traefik self-manages the LE wildcard certs (Cloudflare DNS-01) for both the
+  # public and internal domains, and persists them on a host volume.
+  tls_enabled      = var.dataplane_tls_enabled
+  acme_email       = var.acme_email
+  cf_dns_api_token = var.cf_dns_api_token
+  acme_domains = [
+    { main = var.domain_name, sans = ["*.${var.domain_name}"] },
+    { main = var.internal_domain_name, sans = ["*.${var.internal_domain_name}"] },
+  ]
 }
 
 module "client_proxy" {
@@ -104,6 +115,10 @@ module "client_proxy" {
 
   image        = local.client_proxy_image
   job_env_vars = var.client_proxy_env_vars
+
+  # Reach client-proxy over h2c via Traefik's websecure entrypoint (L4 LB path)
+  # so bidirectional HTTP/2 (PTY) survives to envd.
+  secure_entrypoint = var.dataplane_tls_enabled
 }
 
 module "api" {

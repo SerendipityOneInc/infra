@@ -4,12 +4,16 @@ locals {
     if try(trimspace(value), "") != ""
   }
 
-  # Convert exposure_type to Traefik entrypoints
+  # Convert exposure_type to Traefik entrypoints. secure_entrypoint overrides:
+  # sandbox traffic then arrives on Traefik's TLS websecure entrypoint (behind
+  # the L4 LB) and client-proxy is reached over h2c.
   entrypoints = (
+    var.secure_entrypoint ? "websecure" :
     var.exposure_type == "both" ? "web,internal" :
     var.exposure_type == "private" ? "internal" :
     "web"
   )
+  backend_scheme = var.secure_entrypoint ? "h2c" : "http"
 }
 
 resource "nomad_job" "client_proxy" {
@@ -25,8 +29,9 @@ resource "nomad_job" "client_proxy" {
     proxy_port  = var.proxy_port
     health_port = var.health_port
 
-    image        = var.image
-    job_env_vars = local.job_env_vars
-    entrypoints  = local.entrypoints
+    image          = var.image
+    job_env_vars   = local.job_env_vars
+    entrypoints    = local.entrypoints
+    backend_scheme = local.backend_scheme
   })
 }

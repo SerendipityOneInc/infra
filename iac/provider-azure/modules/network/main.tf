@@ -653,18 +653,112 @@ resource "azurerm_private_dns_zone_virtual_network_link" "internal" {
   tags                  = var.tags
 }
 
-resource "azurerm_private_dns_a_record" "internal_apex" {
-  name                = "@"
+# Control-plane hosts on the internal domain (api./nomad./grpc-api.) resolve to
+# the App Gateway private frontend — they're unary/short and the gateway is
+# fine for them. A specific record beats the wildcard below.
+resource "azurerm_private_dns_a_record" "internal_control" {
+  for_each            = toset(["api", "nomad", "grpc-api"])
+  name                = each.key
   zone_name           = azurerm_private_dns_zone.internal.name
   resource_group_name = var.resource_group_name
   ttl                 = 300
   records             = [local.appgw_private_fe_ip]
 }
 
+# Sandbox data plane (*.<internal_domain>) resolves to the L4 passthrough LB's
+# private frontend, so in-VNet PTY/bidi streams get HTTP/2 end to end.
 resource "azurerm_private_dns_a_record" "internal_wildcard" {
   name                = "*"
   zone_name           = azurerm_private_dns_zone.internal.name
   resource_group_name = var.resource_group_name
   ttl                 = 300
-  records             = [local.appgw_private_fe_ip]
+  records             = [local.dataplane_private_fe_ip]
+}
+
+# ============================================================================
+# Sandbox data-plane L4 load balancer (TCP passthrough).
+#
+# The App Gateway can only speak HTTP/1.1 to backends, which breaks
+# bidirectional gRPC/connect streams (PTY). Sandbox traffic (*.<domain> and
+# *.<internal_domain>) therefore bypasses the App Gateway and reaches Traefik
+# directly through this Standard LB in TCP-passthrough mode: the TLS handshake
+# (with h2 ALPN) terminates at Traefik unchanged, so HTTP/2 is preserved end to
+# end. One LB, two frontends: a public IP for external SDK clients and a static
+# private IP (Private DNS target) for in-VNet consumers.
+# ============================================================================
+
+resource "azurerm_public_ip" "dataplane" {
+  name                = "${var.prefix}dataplane-pip"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  zones               = ["1", "2", "3"]
+  tags                = var.tags
+}
+
+locals {
+  dataplane_private_fe_ip = var.dataplane_private_frontend_ip != "" ? var.dataplane_private_frontend_ip : cidrhost(var.services_subnet_cidr, 250)
+}
+
+resource "azurerm_lb" "dataplane" {
+  name                = "${var.prefix}dataplane-lb"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  sku                 = "Standard"
+  tags                = var.tags
+
+  frontend_ip_configuration {
+    name                 = "public"
+    public_ip_address_id = azurerm_public_ip.dataplane.id
+  }
+
+  frontend_ip_configuration {
+    name                          = "private"
+    subnet_id                     = azurerm_subnet.services.id
+    private_ip_address_allocation = "Static"
+    private_ip_address            = local.dataplane_private_fe_ip
+  }
+}
+
+resource "azurerm_lb_backend_address_pool" "dataplane" {
+  name            = "ingress"
+  loadbalancer_id = azurerm_lb.dataplane.id
+}
+
+# TCP probe: passthrough LB does not terminate TLS, so it can only test that
+# Traefik's websecure listener is accepting connections on 443.
+resource "azurerm_lb_probe" "dataplane" {
+  name            = "tls-443"
+  loadbalancer_id = azurerm_lb.dataplane.id
+  protocol        = "Tcp"
+  port            = var.ingress_https_port
+}
+
+resource "azurerm_lb_rule" "dataplane_public" {
+  name                           = "public-443"
+  loadbalancer_id                = azurerm_lb.dataplane.id
+  protocol                       = "Tcp"
+  frontend_port                  = 443
+  backend_port                   = var.ingress_https_port
+  frontend_ip_configuration_name = "public"
+  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.dataplane.id]
+  probe_id                       = azurerm_lb_probe.dataplane.id
+  # PTY sessions idle for long stretches; keep the flow alive well beyond the
+  # 4-min default and rely on TCP keepalive / gRPC pings.
+  idle_timeout_in_minutes = 30
+  enable_tcp_reset        = true
+}
+
+resource "azurerm_lb_rule" "dataplane_private" {
+  name                           = "private-443"
+  loadbalancer_id                = azurerm_lb.dataplane.id
+  protocol                       = "Tcp"
+  frontend_port                  = 443
+  backend_port                   = var.ingress_https_port
+  frontend_ip_configuration_name = "private"
+  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.dataplane.id]
+  probe_id                       = azurerm_lb_probe.dataplane.id
+  idle_timeout_in_minutes        = 30
+  enable_tcp_reset               = true
 }

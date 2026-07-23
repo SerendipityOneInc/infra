@@ -169,3 +169,9 @@ variable "key_vault_name" {
   type        = string
   description = "Key Vault holding the App Gateway origin certificate secrets (appgw-origin-cert / appgw-origin-key)."
 }
+
+variable "dataplane_private_frontend_ip" {
+  type        = string
+  description = "Static private IP for the sandbox data-plane L4 LB's internal frontend (internal domain resolves here). Empty = host .250 of the services subnet."
+  default     = ""
+}

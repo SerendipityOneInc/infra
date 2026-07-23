@@ -60,7 +60,17 @@ function generate_nomad_config {
   local -r node_pool="$7"
   local -r node_labels="$8"
   local -r orchestrator_job_version="$9"
+  local -r host_volumes="${10:-}"
   local -r config_path="$config_dir/$NOMAD_CONFIG_FILE"
+
+  # host_volumes: space-separated name:path pairs (e.g. traefik-acme:/opt/acme),
+  # rendered as client host_volume stanzas so jobs can persist state on the host
+  # (ingress uses one for the ACME cert store).
+  local host_volume_config=""
+  local hv
+  for hv in $host_volumes; do
+    host_volume_config+=$'\n'"  host_volume \"${hv%%:*}\" {"$'\n'"    path = \"${hv##*:}\""$'\n'"    read_only = false"$'\n'"  }"
+  done
 
   local instance_name instance_ip_address instance_zone job_constraint
   instance_name=$(get_instance_name)
@@ -98,7 +108,7 @@ client {
     "orchestrator_version" = "${orchestrator_job_version:-}"
     ${job_constraint:+"\"job_constraint\"" = "\"$job_constraint\""}
   }
-  max_kill_timeout = "24h"
+  max_kill_timeout = "24h"$host_volume_config
 }
 
 plugin "raw_exec" {
@@ -353,6 +363,7 @@ function run {
   local orchestrator_job_version=""
   local use_sudo=""
   local acr_login_server=""
+  local host_volumes=""
 
   while [[ $# -gt 0 ]]; do
     local key="$1"
@@ -361,6 +372,10 @@ function run {
     --client) client="true" ;;
     --acr-login-server)
       acr_login_server="$2"
+      shift
+      ;;
+    --host-volume)
+      host_volumes="${host_volumes:+$host_volumes }$2"
       shift
       ;;
     --num-servers)
@@ -419,7 +434,7 @@ function run {
   log_dir=$(cd "$SCRIPT_DIR/../log" && pwd)
   user=$(get_owner_of_path "$config_dir")
 
-  generate_nomad_config "$server" "$client" "$num_servers" "$config_dir" "$user" "$consul_token" "$node_pool" "$node_labels" "$orchestrator_job_version"
+  generate_nomad_config "$server" "$client" "$num_servers" "$config_dir" "$user" "$consul_token" "$node_pool" "$node_labels" "$orchestrator_job_version" "$host_volumes"
   generate_supervisor_config "$SUPERVISOR_CONFIG_PATH" "$config_dir" "$data_dir" "$bin_dir" "$log_dir" "$user" "$use_sudo"
   generate_docker_auth "$acr_login_server"
   start_nomad

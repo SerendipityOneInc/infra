@@ -22,7 +22,20 @@ job "ingress" {
       port "ingress-internal" {
         static = "${ingress_internal_port}"
       }
+%{ if tls_enabled }
+      port "ingress-secure" {
+        static = "${ingress_secure_port}"
+      }
+%{ endif }
     }
+%{ if tls_enabled }
+    # Persist the ACME account key + issued certs across restarts so Traefik
+    # does not re-request from Let's Encrypt on every reschedule.
+    volume "acme" {
+      type   = "host"
+      source = "${acme_volume_name}"
+    }
+%{ endif }
 
 # https://developer.hashicorp.com/nomad/docs/job-specification/update
 %{ if update_stanza }
@@ -83,11 +96,23 @@ job "ingress" {
       config {
         network_mode = "host"
         image        = "traefik:v3.5"
-        ports        = ["control", "ingress", "ingress-internal"]
+        ports        = ["control", "ingress", "ingress-internal"%{ if tls_enabled }, "ingress-secure"%{ endif }]
         args = [
           "--configFile=/local/traefik.toml",
         ]
       }
+%{ if tls_enabled }
+      # Cloudflare token for the ACME DNS-01 challenge (read by Traefik's
+      # cloudflare provider). Sandbox data plane only; empty on non-TLS providers.
+      env {
+        CF_DNS_API_TOKEN = "${cf_dns_api_token}"
+      }
+
+      volume_mount {
+        volume      = "acme"
+        destination = "/acme"
+      }
+%{ endif }
 
       template {
         data        = <<EOF

@@ -138,6 +138,9 @@ module "cloudflare" {
 
   domain_name    = var.domain_name
   lb_frontend_ip = module.network.appgw_public_ip
+  # Sandbox wildcard points at the L4 data-plane LB (HTTP/2/PTY); control-plane
+  # hosts stay on the App Gateway.
+  wildcard_ip = module.network.dataplane_public_ip
 }
 
 # ----------------------------------------------------------------------------
@@ -412,6 +415,7 @@ module "cluster" {
   #     node pool; it reaches sandboxes on the orch client pool internally, so the
   #     orch client/build pools are NOT App Gateway backends).
   api_appgw_backend_pool_ids    = [module.network.ingress_backend_pool_id, module.network.grpc_backend_pool_id]
+  api_lb_backend_pool_ids       = [module.network.dataplane_backend_pool_id]
   client_appgw_backend_pool_ids = []
   server_appgw_backend_pool_ids = [module.network.nomad_backend_pool_id]
 
@@ -474,6 +478,13 @@ module "nomad" {
   domain_name         = var.domain_name
   environment         = var.environment
   resource_group_name = azurerm_resource_group.main.name
+
+  # Sandbox data-plane TLS: Traefik terminates + self-manages LE wildcard certs
+  # for both domains, reached via the L4 LB (App Gateway can't carry PTY's h2).
+  dataplane_tls_enabled = true
+  internal_domain_name  = local.internal_domain_name
+  acme_email            = var.acmebot_mail_address
+  cf_dns_api_token      = module.init.cloudflare.token
 
   nomad_acl_token  = module.init.cluster.nomad_acl_token
   consul_acl_token = module.init.cluster.consul_acl_token

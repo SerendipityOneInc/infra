@@ -227,3 +227,26 @@ variable "otel_collector_grpc_port" {
   type    = number
   default = 4317
 }
+
+variable "dataplane_tls_enabled" {
+  type        = bool
+  description = "Enable Traefik's TLS websecure entrypoint + h2c client-proxy backend for the L4 data-plane path."
+  default     = false
+}
+
+variable "internal_domain_name" {
+  type        = string
+  description = "Internal-only domain (in-VNet) whose wildcard cert Traefik also requests."
+  default     = ""
+}
+
+variable "acme_email" {
+  type    = string
+  default = ""
+}
+
+variable "cf_dns_api_token" {
+  type      = string
+  default   = ""
+  sensitive = true
+}

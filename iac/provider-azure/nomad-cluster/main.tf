@@ -100,6 +100,7 @@ module "api" {
   identity_client_id     = var.identity_client_id
   subnet_id              = var.cluster_subnet_id
   appgw_backend_pool_ids = var.api_appgw_backend_pool_ids
+  lb_backend_pool_ids    = var.api_lb_backend_pool_ids
 
   cluster_tag_name  = local.cluster_tag_name
   cluster_tag_value = local.cluster_tag_value

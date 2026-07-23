@@ -73,7 +73,10 @@ resource "cloudflare_record" "wildcard" {
   zone_id = data.cloudflare_zone.domain.zone_id
   name    = "*.${var.domain_name}"
   type    = "A"
-  value   = var.lb_frontend_ip
+  # Sandbox data plane: points at the L4 passthrough LB (not the App Gateway),
+  # so HTTP/2 (PTY) is preserved end to end. Control-plane hosts (api./nomad./…)
+  # stay on the App Gateway via proxied_subdomains.
+  value   = var.wildcard_ip != "" ? var.wildcard_ip : var.lb_frontend_ip
   proxied = false
   ttl     = var.wildcard_ttl
   comment = var.comment

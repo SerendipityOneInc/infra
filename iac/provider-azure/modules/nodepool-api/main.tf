@@ -76,6 +76,9 @@ resource "azurerm_linux_virtual_machine_scale_set" "api" {
       primary                                      = true
       subnet_id                                    = var.subnet_id
       application_gateway_backend_address_pool_ids = var.appgw_backend_pool_ids
+      # Also the sandbox data-plane L4 LB (Traefik on 443); coexists with the
+      # App Gateway pools on the same NIC.
+      load_balancer_backend_address_pool_ids = var.lb_backend_pool_ids
     }
   }
 

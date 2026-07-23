@@ -31,3 +31,9 @@ variable "comment" {
   description = "Comment attached to each Cloudflare record (e.g. environment or subscription id)"
   default     = "managed by terraform (provider-azure)"
 }
+
+variable "wildcard_ip" {
+  type        = string
+  description = "IP the per-sandbox wildcard (*.<domain>) points at — the sandbox data-plane L4 LB. Empty falls back to lb_frontend_ip (App Gateway)."
+  default     = ""
+}

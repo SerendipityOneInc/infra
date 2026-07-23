@@ -49,6 +49,12 @@ variable "exposure_type" {
   }
 }
 
+variable "secure_entrypoint" {
+  type        = bool
+  description = "Route via Traefik's TLS-terminating websecure entrypoint with an h2c backend, instead of the plain web entrypoint. Set on providers (Azure) where sandbox traffic reaches Traefik through an L4 passthrough LB and HTTP/2 must be preserved to client-proxy."
+  default     = false
+}
+
 variable "job_env_vars" {
   type      = map(string)
   default   = {}

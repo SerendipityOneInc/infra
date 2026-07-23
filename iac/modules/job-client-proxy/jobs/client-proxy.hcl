@@ -51,7 +51,9 @@ job "client-proxy" {
         "traefik.http.routers.client-proxy.ruleSyntax=v2",
         "traefik.http.routers.client-proxy.priority=100",
 
-        "traefik.http.services.client-proxy.loadbalancer.server.port=$${NOMAD_PORT_proxy}"
+        "traefik.http.services.client-proxy.loadbalancer.server.port=$${NOMAD_PORT_proxy}",
+        # h2c on the secure path so bidirectional HTTP/2 (PTY) survives to envd.
+        "traefik.http.services.client-proxy.loadbalancer.server.scheme=${backend_scheme}"
       ]
 
       check {
