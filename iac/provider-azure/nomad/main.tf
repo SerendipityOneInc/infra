@@ -278,3 +278,21 @@ module "otel_collector" {
     clickhouse_password = var.clickhouse_password
   })
 }
+
+# In-cluster Grafana over the Loki + ClickHouse datasources (no Grafana Cloud
+# account for this deployment). Reached at grafana.<domain> through the
+# sandbox wildcard path; nomad's own operational view stays the Nomad UI.
+resource "nomad_job" "grafana" {
+  count = var.grafana_enabled ? 1 : 0
+
+  jobspec = templatefile("${path.module}/jobs/grafana.hcl", {
+    node_pool           = var.api_node_pool
+    domain_name         = var.domain_name
+    admin_password      = var.grafana_admin_password
+    loki_port           = var.loki_port
+    clickhouse_port     = var.clickhouse_port
+    clickhouse_database = var.clickhouse_database
+    clickhouse_username = var.clickhouse_username
+    clickhouse_password = var.clickhouse_password
+  })
+}

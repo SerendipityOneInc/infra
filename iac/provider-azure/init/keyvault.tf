@@ -278,3 +278,20 @@ resource "azurerm_key_vault_secret" "dockerhub_password" {
   }
 }
 
+
+# ---
+# In-cluster Grafana admin password (self-hosted nomad job; the e2b-grafana
+# secret above is the unrelated Grafana Cloud placeholder).
+# ---
+resource "random_password" "grafana_admin" {
+  length  = 24
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "grafana_admin_password" {
+  name         = "${var.prefix}grafana-admin-password"
+  key_vault_id = azurerm_key_vault.main.id
+  value        = random_password.grafana_admin.result
+
+  depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
+}

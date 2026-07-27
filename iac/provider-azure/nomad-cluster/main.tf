@@ -186,6 +186,13 @@ module "build" {
   machine_type  = var.build_machine_type
   max_instances = var.build_max_instances
 
+  # Template builds never touch hugepages (memfd/uffd restores use normal
+  # pages; observed HugePages_Free == Total after days of builds), while the
+  # module default (60%) locked ~16G of the 32G node away from them — the
+  # direct cause of random "mmap memfd: cannot allocate memory" build
+  # failures. Sandboxes (which DO use hugepages) run on the client pool only.
+  base_hugepages_percentage = 0
+
   admin_username = var.admin_username
   admin_password = random_password.vm_admin.result
 
@@ -235,6 +242,9 @@ module "client" {
   machine_type              = var.client_machine_type
   max_instances             = var.client_max_instances
   base_hugepages_percentage = var.client_base_hugepages_percentage
+
+  scale_out_memory_free_bytes = var.client_scale_out_memory_free_bytes
+  scale_in_memory_free_bytes  = var.client_scale_in_memory_free_bytes
 
   admin_username = var.admin_username
   admin_password = random_password.vm_admin.result

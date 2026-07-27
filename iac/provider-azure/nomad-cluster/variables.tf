@@ -265,3 +265,13 @@ variable "juicefs_volumes" {
   }))
   default = []
 }
+
+variable "client_scale_out_memory_free_bytes" {
+  type    = number
+  default = null
+}
+
+variable "client_scale_in_memory_free_bytes" {
+  type    = number
+  default = null
+}

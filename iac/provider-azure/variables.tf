@@ -405,3 +405,15 @@ variable "juicefs_volumes" {
   description = "JuiceFS EE volumes auto-mounted on client/build nodes at boot. token_secret is a Key Vault secret name (read via node MI); object access keyless via MI. mount_path must equal local.juicefs_mount_path so the orchestrator's PERSISTENT_VOLUME_MOUNTS lines up."
   default     = []
 }
+
+variable "client_scale_out_memory_free_bytes" {
+  type        = number
+  default     = null
+  description = "orch-client autoscale: scale out when avg available memory < bytes."
+}
+
+variable "client_scale_in_memory_free_bytes" {
+  type        = number
+  default     = null
+  description = "orch-client autoscale: extra scale-in condition, avg available memory > bytes."
+}

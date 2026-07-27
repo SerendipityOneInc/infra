@@ -345,3 +345,15 @@ variable "logs_proxy_port" {
   type    = number
   default = 30006
 }
+
+variable "grafana_admin_password" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Admin password for the in-cluster Grafana. Empty disables the Grafana job."
+}
+
+variable "grafana_enabled" {
+  type    = bool
+  default = false
+}

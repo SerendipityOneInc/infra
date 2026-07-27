@@ -182,3 +182,8 @@ output "storage_account_primary_key" {
   value     = azurerm_storage_account.storage.primary_access_key
   sensitive = true
 }
+
+output "grafana_admin_password" {
+  value     = random_password.grafana_admin.result
+  sensitive = true
+}

@@ -206,3 +206,18 @@ variable "juicefs_volumes" {
   description = "JuiceFS EE volumes auto-mounted at boot. token_secret is a Key Vault secret name (read via the node MI); object access is keyless via the MI."
   default     = []
 }
+
+# Memory-based scaling (Available Memory Bytes platform metric — no guest
+# agent needed on v5 SKUs). Thresholds are absolute bytes and machine-type
+# specific, so they are opt-in per pool; null = CPU-only rules.
+variable "scale_out_memory_free_bytes" {
+  type        = number
+  default     = null
+  description = "Scale out when average available memory drops below this many bytes."
+}
+
+variable "scale_in_memory_free_bytes" {
+  type        = number
+  default     = null
+  description = "Additional scale-in condition: only scale in when average available memory exceeds this many bytes (Azure ANDs all scale-in rules)."
+}

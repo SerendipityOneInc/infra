@@ -107,10 +107,16 @@ resource "azurerm_linux_virtual_machine_scale_set" "client" {
   }
 }
 
-# CPU-based autoscale, mirroring the AWS ASG target-tracking. Defaults to a
-# no-op band (min == max == cluster_size); raise max_instances to enable
-# scale-out. TODO(azure-autoscale): guest memory metrics require the Azure
-# Monitor agent / diagnostics extension, so only host CPU is used here.
+# CPU + (opt-in) memory autoscale, mirroring the GCP MIG autoscaler (CPU
+# utilization + memory percent). Defaults to a no-op band (min == max ==
+# cluster_size); raise max_instances to enable scale-out. Memory uses the
+# "Available Memory Bytes" platform metric (no guest agent on v5 SKUs);
+# thresholds are absolute bytes so they are per-pool opt-in.
+# Scale-out fires when ANY rule matches; scale-in requires ALL Decrease
+# rules to match (Azure autoscale semantics) — the memory Decrease rule
+# therefore makes scale-in stricter, not looser. NOTE: scale-in reimages a
+# node that may be running sandboxes; acceptable for dev cost-control, use
+# GCP-style scale-out-only (drop the Decrease rules) for prod.
 resource "azurerm_monitor_autoscale_setting" "client" {
   name                = "${var.prefix}${var.name}-autoscale"
   resource_group_name = var.resource_group_name
@@ -163,6 +169,52 @@ resource "azurerm_monitor_autoscale_setting" "client" {
         type      = "ChangeCount"
         value     = "1"
         cooldown  = "PT10M"
+      }
+    }
+
+    dynamic "rule" {
+      for_each = var.scale_out_memory_free_bytes != null ? [1] : []
+      content {
+        metric_trigger {
+          metric_name        = "Available Memory Bytes"
+          metric_resource_id = azurerm_linux_virtual_machine_scale_set.client.id
+          time_grain         = "PT1M"
+          statistic          = "Average"
+          time_window        = "PT5M"
+          time_aggregation   = "Average"
+          operator           = "LessThan"
+          threshold          = var.scale_out_memory_free_bytes
+        }
+
+        scale_action {
+          direction = "Increase"
+          type      = "ChangeCount"
+          value     = "1"
+          cooldown  = "PT5M"
+        }
+      }
+    }
+
+    dynamic "rule" {
+      for_each = var.scale_in_memory_free_bytes != null ? [1] : []
+      content {
+        metric_trigger {
+          metric_name        = "Available Memory Bytes"
+          metric_resource_id = azurerm_linux_virtual_machine_scale_set.client.id
+          time_grain         = "PT1M"
+          statistic          = "Average"
+          time_window        = "PT5M"
+          time_aggregation   = "Average"
+          operator           = "GreaterThan"
+          threshold          = var.scale_in_memory_free_bytes
+        }
+
+        scale_action {
+          direction = "Decrease"
+          type      = "ChangeCount"
+          value     = "1"
+          cooldown  = "PT10M"
+        }
       }
     }
   }

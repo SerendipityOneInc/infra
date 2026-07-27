@@ -463,6 +463,8 @@ module "cluster" {
   client_node_labels                  = var.client_node_labels
   client_server_nested_virtualization = var.client_server_nested_virtualization
   client_max_instances                = var.client_max_instances
+  client_scale_out_memory_free_bytes  = var.client_scale_out_memory_free_bytes
+  client_scale_in_memory_free_bytes   = var.client_scale_in_memory_free_bytes
 
   build_node_pool_name               = local.build_pool_name
   build_cluster_size                 = var.build_cluster_size
@@ -573,5 +575,8 @@ module "nomad" {
   loki_port           = local.loki_port
   loki_container_name = module.init.loki_container_name
   identity_client_id  = module.init.identity_client_id
+
+  grafana_enabled        = true
+  grafana_admin_password = module.init.grafana_admin_password
 }
 
