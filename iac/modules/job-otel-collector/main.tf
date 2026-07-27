@@ -50,11 +50,11 @@ resource "nomad_job" "otel_collector" {
 
 variable "provider_name" {
   type        = string
-  description = "Cloud provider: gcp or aws"
+  description = "Cloud provider: gcp, aws or azure. The default config only supports gcp/aws (Grafana Cloud legs); azure deployments pass otel_collector_config_override."
 
   validation {
-    condition     = contains(["gcp", "aws"], var.provider_name)
-    error_message = "provider_name must be 'gcp' or 'aws'"
+    condition     = contains(["gcp", "aws", "azure"], var.provider_name)
+    error_message = "provider_name must be 'gcp', 'aws' or 'azure'"
   }
 }
 

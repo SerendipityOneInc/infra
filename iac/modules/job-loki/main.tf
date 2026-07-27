@@ -1,11 +1,13 @@
 locals {
   default_loki_config = templatefile(
     "${path.module}/configs/loki.yml", {
-      provider_name            = var.provider_name
-      loki_port                = var.loki_port
-      bucket_name              = var.bucket_name
-      aws_region               = var.aws_region
-      loki_use_v13_schema_from = var.loki_use_v13_schema_from
+      provider_name              = var.provider_name
+      loki_port                  = var.loki_port
+      bucket_name                = var.bucket_name
+      aws_region                 = var.aws_region
+      loki_use_v13_schema_from   = var.loki_use_v13_schema_from
+      azure_storage_account_name = var.azure_storage_account_name
+      azure_user_assigned_id     = var.azure_user_assigned_id
     },
   )
 

@@ -186,3 +186,95 @@ module "redis" {
   port_number = var.redis_port
   port_name   = "redis"
 }
+
+# ---
+# Observability. No Grafana Cloud account is wired for this deployment, so
+# only the in-cluster legs run: ClickHouse stores sandbox/host metrics (read
+# back by the API), Loki stores logs shipped by logs-collector (vector), and
+# otel-collector routes e2b.* OTLP metrics into ClickHouse via an Azure
+# override config (the shared default config hard-wires Grafana exporters).
+# ---
+
+module "clickhouse" {
+  source = "../../modules/job-clickhouse"
+  count  = var.clickhouse_server_count > 0 ? 1 : 0
+
+  provider_name = "azure"
+
+  node_pool             = var.clickhouse_node_pool
+  job_constraint_prefix = var.clickhouse_job_constraint_prefix
+  server_count          = var.clickhouse_server_count
+
+  server_secret = var.clickhouse_server_secret
+  cpu_count     = 2
+  memory_mb     = 8192
+
+  clickhouse_database = var.clickhouse_database
+  clickhouse_username = var.clickhouse_username
+  clickhouse_password = var.clickhouse_password
+  clickhouse_port     = var.clickhouse_port
+
+  clickhouse_metrics_port = var.clickhouse_metrics_port
+  otel_exporter_endpoint  = "http://localhost:${var.otel_collector_grpc_port}"
+
+  # Backup (clickhouse-backup azblob remote storage).
+  backup_bucket       = var.clickhouse_backups_container_name
+  azblob_account_name = var.storage_account_name
+  azblob_account_key  = var.storage_account_primary_key
+
+  clickhouse_migrator_image = var.clickhouse_migrator_image
+}
+
+module "loki" {
+  source = "../../modules/job-loki"
+  count  = var.loki_container_name != "" ? 1 : 0
+
+  provider_name = "azure"
+
+  node_pool = var.api_node_pool
+
+  prevent_colocation = false
+  bucket_name        = var.loki_container_name
+
+  azure_storage_account_name = var.storage_account_name
+  azure_user_assigned_id     = var.identity_client_id
+
+  loki_port = var.loki_port
+}
+
+module "logs_collector" {
+  source = "../../modules/job-logs-collector"
+  count  = var.loki_container_name != "" ? 1 : 0
+
+  loki_endpoint = "http://loki.service.consul:${var.loki_port}"
+
+  vector_health_port = var.logs_health_proxy_port
+  vector_api_port    = var.logs_proxy_port
+
+  # No Grafana Cloud: vector's grafana sink is gated on a non-empty endpoint.
+  grafana_logs_user     = ""
+  grafana_logs_endpoint = ""
+  grafana_api_key       = ""
+}
+
+module "otel_collector" {
+  source = "../../modules/job-otel-collector"
+
+  provider_name = "azure"
+
+  otel_collector_grpc_port = var.otel_collector_grpc_port
+
+  # Dummy values — the default config (which needs them) is fully replaced by
+  # the override below.
+  grafana_otel_collector_token = "unused"
+  grafana_otlp_url             = "unused"
+  grafana_username             = "unused"
+
+  otel_collector_config_override = templatefile("${path.module}/configs/otel-collector-azure.yaml", {
+    clickhouse_host     = "clickhouse.service.consul"
+    clickhouse_port     = var.clickhouse_port
+    clickhouse_database = var.clickhouse_database
+    clickhouse_username = var.clickhouse_username
+    clickhouse_password = var.clickhouse_password
+  })
+}

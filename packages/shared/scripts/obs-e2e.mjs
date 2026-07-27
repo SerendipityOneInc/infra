@@ -1,0 +1,12 @@
+import { Sandbox } from 'e2b';
+const sbx = await Sandbox.create('base', { timeoutMs: 120000 });
+console.log('sandbox:', sbx.sandboxId);
+await sbx.commands.run('echo obs-e2e-marker && ls / > /dev/null');
+await new Promise(r => setTimeout(r, 30000));
+const res = await fetch(`https://api.sandbox2.yesy.dev/sandboxes/${sbx.sandboxId}/logs`, { headers: { 'X-API-Key': process.env.E2B_API_KEY } });
+const body = await res.json();
+const n = Array.isArray(body.logs) ? body.logs.length : -1;
+console.log('logs API:', res.status, '| lines:', n);
+if (n > 0) console.log('sample:', JSON.stringify(body.logs[0]).slice(0, 160));
+await sbx.kill();
+console.log(n > 0 ? 'OBS LOGS E2E — PASS' : 'OBS LOGS E2E — EMPTY');

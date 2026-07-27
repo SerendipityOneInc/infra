@@ -61,6 +61,13 @@ job "clickhouse-backup-restore" {
         S3_REGION      = "${aws_region}"
         S3_PATH        = "${backup_folder}/backup/server-${i + 1}/"
 %{ endif }
+%{ if cloud_provider == "azure" }
+        REMOTE_STORAGE      = "azblob"
+        AZBLOB_ACCOUNT_NAME = "${azblob_account_name}"
+        AZBLOB_ACCOUNT_KEY  = "${azblob_account_key}"
+        AZBLOB_CONTAINER    = "${backup_bucket}"
+        AZBLOB_PATH         = "${backup_folder}/backup/server-${i + 1}/"
+%{ endif }
       }
 
       resources {

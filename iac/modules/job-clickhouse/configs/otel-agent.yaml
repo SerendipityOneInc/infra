@@ -50,6 +50,24 @@ processors:
         host.name:
           enabled: true
 %{ endif }
+%{ if provider_name == "azure" }
+    detectors: [azure]
+    override: true
+    azure:
+      resource_attributes:
+        host.id:
+          enabled: true
+        host.name:
+          enabled: true
+        cloud.provider:
+          enabled: false
+        cloud.platform:
+          enabled: false
+        cloud.region:
+          enabled: false
+        cloud.account.id:
+          enabled: false
+%{ endif }
 
   transform/set-name:
     metric_statements:
@@ -57,6 +75,9 @@ processors:
       - set(datapoint.attributes["service.instance.id"], resource.attributes["gcp.gce.instance.name"])
 %{ endif }
 %{ if provider_name == "aws" }
+      - set(datapoint.attributes["service.instance.id"], resource.attributes["host.name"])
+%{ endif }
+%{ if provider_name == "azure" }
       - set(datapoint.attributes["service.instance.id"], resource.attributes["host.name"])
 %{ endif }
 

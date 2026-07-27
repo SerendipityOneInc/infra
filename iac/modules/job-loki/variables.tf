@@ -1,11 +1,11 @@
 
 variable "provider_name" {
   type        = string
-  description = "Cloud provider: gcp or aws"
+  description = "Cloud provider: gcp, aws or azure"
 
   validation {
-    condition     = contains(["gcp", "aws"], var.provider_name)
-    error_message = "provider_name must be 'gcp' or 'aws'"
+    condition     = contains(["gcp", "aws", "azure"], var.provider_name)
+    error_message = "provider_name must be 'gcp', 'aws' or 'azure'"
   }
 }
 
@@ -44,6 +44,18 @@ variable "prevent_colocation" {
 variable "aws_region" {
   type    = string
   default = ""
+}
+
+variable "azure_storage_account_name" {
+  type        = string
+  default     = ""
+  description = "Azure Storage account holding the Loki chunks container (provider_name = azure). bucket_name is the container name."
+}
+
+variable "azure_user_assigned_id" {
+  type        = string
+  default     = ""
+  description = "Client ID of the user-assigned managed identity Loki uses for Blob auth (provider_name = azure). Empty = default IMDS identity."
 }
 
 variable "loki_use_v13_schema_from" {

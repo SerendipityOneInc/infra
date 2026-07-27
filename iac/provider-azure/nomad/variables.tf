@@ -250,3 +250,98 @@ variable "cf_dns_api_token" {
   default   = ""
   sensitive = true
 }
+
+# ---
+# Observability (ClickHouse + Loki + logs-collector + otel-collector)
+# ---
+variable "clickhouse_node_pool" {
+  type    = string
+  default = "clickhouse"
+}
+
+variable "clickhouse_job_constraint_prefix" {
+  type    = string
+  default = "clickhouse"
+}
+
+variable "clickhouse_server_count" {
+  type        = number
+  description = "0 disables the whole ClickHouse job set."
+  default     = 0
+}
+
+variable "clickhouse_username" {
+  type    = string
+  default = ""
+}
+
+variable "clickhouse_password" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "clickhouse_server_secret" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "clickhouse_port" {
+  type    = number
+  default = 9000
+}
+
+variable "clickhouse_metrics_port" {
+  type    = number
+  default = 9363
+}
+
+variable "clickhouse_database" {
+  type    = string
+  default = "default"
+}
+
+variable "clickhouse_migrator_image" {
+  type    = string
+  default = ""
+}
+
+variable "clickhouse_backups_container_name" {
+  type    = string
+  default = ""
+}
+
+variable "storage_account_primary_key" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Storage account key for clickhouse-backup azblob remote storage."
+}
+
+variable "loki_port" {
+  type    = number
+  default = 3100
+}
+
+variable "loki_container_name" {
+  type        = string
+  default     = ""
+  description = "Blob container Loki stores chunks/indexes in. Empty disables Loki."
+}
+
+variable "identity_client_id" {
+  type        = string
+  default     = ""
+  description = "Client ID of the cluster user-assigned managed identity (Loki Blob auth)."
+}
+
+variable "logs_health_proxy_port" {
+  type    = number
+  default = 44313
+}
+
+variable "logs_proxy_port" {
+  type    = number
+  default = 30006
+}

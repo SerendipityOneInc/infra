@@ -554,5 +554,24 @@ module "nomad" {
 
   # Telemetry.
   otel_collector_grpc_port = local.otel_collector_port
+
+  # Observability (ClickHouse + Loki + logs/otel collectors; in-cluster only —
+  # no Grafana Cloud account, see nomad/main.tf).
+  clickhouse_node_pool             = local.clickhouse_pool_name
+  clickhouse_job_constraint_prefix = local.clickhouse_jobs_prefix
+  clickhouse_server_count          = var.clickhouse_cluster_size
+  clickhouse_username              = module.init.clickhouse.username
+  clickhouse_password              = module.init.clickhouse.password
+  clickhouse_server_secret         = module.init.clickhouse.server_secret
+  clickhouse_port                  = local.clickhouse_port
+  clickhouse_database              = local.clickhouse_database
+  clickhouse_migrator_image        = "${module.init.acr_login_server}/${module.init.clickhouse_migrator_repository_name}:${var.image_tag}"
+
+  clickhouse_backups_container_name = module.init.clickhouse_backups_container_name
+  storage_account_primary_key       = module.init.storage_account_primary_key
+
+  loki_port           = local.loki_port
+  loki_container_name = module.init.loki_container_name
+  identity_client_id  = module.init.identity_client_id
 }
 

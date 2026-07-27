@@ -1,0 +1,84 @@
+# Azure override for job-otel-collector (passed via otel_collector_config_override).
+# The shared default config hard-wires Grafana Cloud exporters into every
+# pipeline; this deployment has no Grafana Cloud account, so only the
+# in-cluster leg is kept: e2b.* metrics -> ClickHouse (read back by the API's
+# sandbox-metrics endpoints). Traces/logs pipelines terminate in the debug
+# exporter so services' OTLP exports succeed quietly instead of spamming
+# connection-refused; Loki ingestion is handled by logs-collector (vector),
+# not this collector.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 100
+        read_buffer_size: 10943040
+        max_concurrent_streams: 200
+        write_buffer_size: 10943040
+
+processors:
+  batch: {}
+
+  batch/clickhouse:
+    timeout: 5s
+    send_batch_size: 50000
+
+  filter/external_metrics:
+    metrics:
+      include:
+        match_type: regexp
+        metric_names:
+          - "e2b.*"
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+exporters:
+  debug:
+    verbosity: basic
+    sampling_initial: 1
+    sampling_thereafter: 5000
+
+  clickhouse:
+    endpoint: tcp://${clickhouse_host}:${clickhouse_port}
+    database: ${clickhouse_database}
+    username: ${clickhouse_username}
+    password: ${clickhouse_password}
+    async_insert: true
+    create_schema: false
+    metrics_tables:
+      gauge:
+        name: "metrics_gauge"
+      sum:
+        name: "metrics_sum"
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  extensions:
+    - health_check
+  pipelines:
+    metrics/external:
+      receivers:
+        - otlp
+      processors:
+        - filter/external_metrics
+        - batch/clickhouse
+      exporters:
+        - clickhouse
+    traces:
+      receivers:
+        - otlp
+      processors:
+        - batch
+      exporters:
+        - debug
+    logs:
+      receivers:
+        - otlp
+      processors:
+        - batch
+      exporters:
+        - debug

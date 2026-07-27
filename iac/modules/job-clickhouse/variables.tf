@@ -1,10 +1,10 @@
 variable "provider_name" {
   type        = string
-  description = "Cloud provider: gcp or aws"
+  description = "Cloud provider: gcp, aws or azure"
 
   validation {
-    condition     = contains(["gcp", "aws"], var.provider_name)
-    error_message = "provider_name must be 'gcp' or 'aws'"
+    condition     = contains(["gcp", "aws", "azure"], var.provider_name)
+    error_message = "provider_name must be 'gcp', 'aws' or 'azure'"
   }
 }
 
@@ -97,6 +97,19 @@ variable "gcs_credentials_json_encoded" {
 variable "aws_region" {
   type    = string
   default = ""
+}
+
+variable "azblob_account_name" {
+  type        = string
+  default     = ""
+  description = "Azure Storage account for clickhouse-backup azblob remote storage (provider_name = azure)."
+}
+
+variable "azblob_account_key" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Azure Storage account key for clickhouse-backup azblob remote storage (provider_name = azure)."
 }
 
 // ---

@@ -25,6 +25,15 @@ storage_config:
     bucketnames: "${bucket_name}"
     s3forcepathstyle: false
 %{ endif }
+%{ if provider_name == "azure" }
+  azure:
+    account_name: "${azure_storage_account_name}"
+    container_name: "${bucket_name}"
+    use_managed_identity: true
+%{ if azure_user_assigned_id != "" }
+    user_assigned_id: "${azure_user_assigned_id}"
+%{ endif }
+%{ endif }
   tsdb_shipper:
     active_index_directory: /loki/tsdb-shipper-active
     cache_location: /loki/tsdb-shipper-cache
@@ -92,6 +101,15 @@ schema_config:
         prefix: loki_index_
         period: 24h
 %{ endif }
+%{ if provider_name == "azure" }
+    - from: 2024-03-05
+      store: tsdb
+      object_store: azure
+      schema: v13
+      index:
+        prefix: loki_index_
+        period: 24h
+%{ endif }
 
 compactor:
   working_directory: /loki/compactor
@@ -104,6 +122,9 @@ compactor:
 %{ endif }
 %{ if provider_name == "aws" }
   delete_request_store: aws
+%{ endif }
+%{ if provider_name == "azure" }
+  delete_request_store: azure
 %{ endif }
 
 # The bucket lifecycle policy should be set to delete objects after MORE than the specified retention period
