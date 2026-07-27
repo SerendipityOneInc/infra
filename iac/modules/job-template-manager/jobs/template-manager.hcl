@@ -62,22 +62,29 @@ job "template-manager" {
       }
     }
 
+    # Consul-registered (the default provider; a task group cannot mix service
+    # providers). Nothing consumes a Nomad-native "template-manager" service:
+    # the API discovers template builders via the Nomad ALLOCATIONS API
+    # (LocalServiceDiscovery / FilterTemplateBuilders), and the by-name Nomad
+    # service discovery only queries NOMAD_ORCHESTRATOR_SERVICE_NAMES
+    # (default "orchestrator").
+    #
+    # The Traefik tags route api.<domain>/upload to this server's HMAC
+    # proxy-upload endpoint: storage providers whose native signed URLs the
+    # e2b SDK cannot bare-PUT to (Azure: mandatory x-ms-blob-type header a SAS
+    # cannot pre-sign) hand out URLs pointing here — see orchestrator
+    # pkg/localupload. priority 600 outranks the api router (500). Inert on
+    # GCS/S3 providers: nothing points clients at this route.
     service {
-      name     = "template-manager"
-      port     = "${port}"
-      provider = "nomad"
+      name = "template-manager"
+      port = "${port}"
 
-      # Route api.<domain>/upload to this server's HMAC proxy-upload endpoint.
-      # Storage providers whose native signed URLs the e2b SDK cannot bare-PUT
-      # to (Azure: mandatory x-ms-blob-type header a SAS cannot pre-sign) hand
-      # out URLs pointing here — see orchestrator pkg/localupload. The longer
-      # rule outranks the api service's HostRegexp router via Traefik's
-      # rule-length priority. Inert on GCS/S3 providers: nothing points
-      # clients at this route.
       tags = [
         "traefik.enable=true",
+        "traefik.http.routers.template-manager-upload.entrypoints=web",
         "traefik.http.routers.template-manager-upload.rule=HostRegexp(`api.{domain:.+}`) && PathPrefix(`/upload`)",
-        "traefik.http.services.template-manager.loadbalancer.server.port=${port}",
+        "traefik.http.routers.template-manager-upload.ruleSyntax=v2",
+        "traefik.http.routers.template-manager-upload.priority=600",
       ]
 
       check {
