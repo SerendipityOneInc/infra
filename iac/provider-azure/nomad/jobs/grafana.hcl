@@ -58,6 +58,8 @@ job "grafana" {
 
         volumes = [
           "local/provisioning/datasources:/etc/grafana/provisioning/datasources",
+          "local/provisioning/dashboards:/etc/grafana/provisioning/dashboards",
+          "local/dashboards:/var/lib/grafana/dashboards",
         ]
       }
 
@@ -80,12 +82,14 @@ apiVersion: 1
 datasources:
   - name: Loki
     type: loki
+    uid: loki
     access: proxy
     url: http://loki.service.consul:${loki_port}
     isDefault: true
     editable: false
   - name: ClickHouse
     type: grafana-clickhouse-datasource
+    uid: clickhouse
     access: proxy
     editable: false
     jsonData:
@@ -96,6 +100,307 @@ datasources:
       username: ${clickhouse_username}
     secureJsonData:
       password: ${clickhouse_password}
+EOT
+      }
+
+
+      template {
+        destination = "local/provisioning/dashboards/provider.yaml"
+        data        = <<EOT
+apiVersion: 1
+providers:
+  - name: e2b
+    folder: E2B
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
+EOT
+      }
+
+      template {
+        destination = "local/dashboards/cluster-nodes.json"
+        left_delimiter  = "[["
+        right_delimiter = "]]"
+        data            = <<EOT
+{
+ "uid": "e2b-cluster-nodes",
+ "title": "E2B Cluster Nodes",
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "refresh": "1m",
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "title": "Node available memory (GiB)",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['host'] AS host, avg(Value)/1073741824 AS avail_gib FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_memory_available' AND $__timeFilter(TimeUnix) GROUP BY time, host ORDER BY time",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Node CPU idle (%)",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['host'] AS host, avg(Value) AS idle_pct FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_cpu_idle' AND $__timeFilter(TimeUnix) GROUP BY time, host ORDER BY time",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Alloc memory usage by task (GiB)",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 9
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['task'] AS task, max(Value)/1073741824 AS used_gib FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_allocs_memory_usage' AND $__timeFilter(TimeUnix) GROUP BY time, task ORDER BY time",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Node disk available (GiB)",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 9
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(Attributes['host'], ' ', Attributes['disk']) AS disk, avg(Value)/1073741824 AS avail_gib FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_disk_available' AND $__timeFilter(TimeUnix) GROUP BY time, disk ORDER BY time",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  }
+ ]
+}
+EOT
+      }
+
+      template {
+        destination = "local/dashboards/sandboxes.json"
+        left_delimiter  = "[["
+        right_delimiter = "]]"
+        data            = <<EOT
+{
+ "uid": "e2b-sandboxes",
+ "title": "E2B Sandboxes",
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "refresh": "1m",
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "title": "Active sandboxes",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(timestamp) AS time, uniqExact(sandbox_id) AS sandboxes FROM sandbox_metrics_gauge WHERE $__timeFilter(timestamp) GROUP BY time ORDER BY time",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Sandbox CPU used (%)",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(timestamp) AS time, sandbox_id, avg(value) AS cpu_pct FROM sandbox_metrics_gauge WHERE metric_name = 'e2b.sandbox.cpu.used' AND $__timeFilter(timestamp) GROUP BY time, sandbox_id ORDER BY time",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Sandbox RAM used (GiB)",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 9
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(timestamp) AS time, sandbox_id, max(value)/1073741824 AS ram_gib FROM sandbox_metrics_gauge WHERE metric_name = 'e2b.sandbox.ram.used' AND $__timeFilter(timestamp) GROUP BY time, sandbox_id ORDER BY time",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Recent sandbox logs",
+   "type": "logs",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 9
+   },
+   "datasource": {
+    "type": "loki",
+    "uid": "loki"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "loki",
+      "uid": "loki"
+     },
+     "expr": "{source=\"logs-collector\"}"
+    }
+   ]
+  }
+ ]
+}
 EOT
       }
 

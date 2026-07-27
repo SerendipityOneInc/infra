@@ -45,13 +45,22 @@ processors:
           - "e2b.*"
 
   # Node/alloc resource history for Grafana (upstream sends these to Grafana
-  # Cloud instead).
+  # Cloud instead). Gauge-only whitelist (the same set upstream's otel-agent
+  # keeps): nomad also emits summary-type timer metrics under nomad_client_*,
+  # and one summary in a batch fails the whole ClickHouse insert (no
+  # otel_metrics_summary table), dropping the gauges with it.
   filter/nomad_metrics:
     metrics:
       include:
-        match_type: regexp
+        match_type: strict
         metric_names:
-          - "^nomad_client_.*$"
+          - "nomad_client_host_cpu_idle"
+          - "nomad_client_host_disk_available"
+          - "nomad_client_host_disk_size"
+          - "nomad_client_allocs_memory_usage"
+          - "nomad_client_allocs_cpu_usage"
+          - "nomad_client_host_memory_available"
+          - "nomad_client_host_memory_total"
 
 extensions:
   health_check:
@@ -76,6 +85,19 @@ exporters:
       sum:
         name: "metrics_sum"
 
+  # Infra (nomad) metrics need REAL tables: the e2b metrics_gauge/metrics_sum
+  # are Null-engine tables that only feed the sandbox_/team_ materialized
+  # views (rows without sandbox_id/team_id are discarded by design). This
+  # exporter owns its own otel_metrics_* tables (create_schema).
+  clickhouse/infra:
+    endpoint: tcp://${clickhouse_host}:${clickhouse_port}
+    database: ${clickhouse_database}
+    username: ${clickhouse_username}
+    password: ${clickhouse_password}
+    async_insert: true
+    create_schema: true
+    ttl: 168h
+
 service:
   telemetry:
     logs:
@@ -98,7 +120,7 @@ service:
         - filter/nomad_metrics
         - batch/clickhouse
       exporters:
-        - clickhouse
+        - clickhouse/infra
     traces:
       receivers:
         - otlp
