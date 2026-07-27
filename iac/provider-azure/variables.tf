@@ -417,3 +417,8 @@ variable "client_scale_in_memory_free_bytes" {
   default     = null
   description = "orch-client autoscale: extra scale-in condition, avg available memory > bytes."
 }
+
+variable "dashboard_api_count" {
+  type    = number
+  default = 1
+}

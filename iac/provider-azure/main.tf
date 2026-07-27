@@ -136,8 +136,11 @@ module "network" {
 module "cloudflare" {
   source = "./modules/cloudflare"
 
-  domain_name    = var.domain_name
-  lb_frontend_ip = module.network.appgw_public_ip
+  domain_name = var.domain_name
+  # dashboard-api rides the App Gateway path (traefik web entrypoint), so it
+  # needs an orange-cloud record like the other control-plane hosts.
+  proxied_subdomains = ["api", "grpc-api", "nomad", "docker", "dashboard-api"]
+  lb_frontend_ip     = module.network.appgw_public_ip
   # Sandbox wildcard points at the L4 data-plane LB (HTTP/2/PTY); control-plane
   # hosts stay on the App Gateway.
   wildcard_ip = module.network.dataplane_public_ip
@@ -489,6 +492,37 @@ module "cluster" {
 # and https:: artifact sources (SAS-authed Blob) for the raw Go binaries.
 # ----------------------------------------------------------------------------
 
+locals {
+  # Dashboard API in platform-managed mode: admin endpoints (team bootstrap,
+  # key management) authenticated by ADMIN_TOKEN only. The Ory values are
+  # non-empty placeholders purely to satisfy startup validation — no user
+  # OAuth is wired; swap in a real Ory project when self-service login is
+  # needed. Billing empty => explicit noop provision sink.
+  dashboard_api_env_vars = {
+    GIN_MODE    = "release"
+    ENVIRONMENT = var.environment
+    DOMAIN_NAME = var.domain_name
+
+    ADMIN_TOKEN                = module.init.admin_token
+    POSTGRES_CONNECTION_STRING = module.init.postgres_connection_string
+    AUTH_DB_CONNECTION_STRING  = module.init.postgres_connection_string
+
+    CLICKHOUSE_CONNECTION_STRING = local.clickhouse_connection_string
+
+    # The Nomad jobspec template renders each entry as `${key} = "${value}"`,
+    # so the embedded JSON's quotes must be pre-escaped.
+    AUTH_PROVIDER_CONFIG = replace(jsonencode({ jwt = [] }), "\"", "\\\"")
+
+    REDIS_URL = "redis.service.consul:${local.redis_port}"
+
+    ORY_SDK_URL           = "https://ory-placeholder.invalid"
+    ORY_PROJECT_API_TOKEN = "unused-platform-managed-mode"
+
+    OTEL_COLLECTOR_GRPC_ENDPOINT = "localhost:${local.otel_collector_port}"
+    LOGS_COLLECTOR_ADDRESS       = "http://localhost:${local.logs_proxy_port}"
+  }
+}
+
 module "nomad" {
   source = "./nomad"
 
@@ -578,5 +612,10 @@ module "nomad" {
 
   grafana_enabled        = true
   grafana_admin_password = module.init.grafana_admin_password
+
+  # Dashboard API (platform-managed provisioning).
+  dashboard_api_count           = var.dashboard_api_count
+  dashboard_api_repository_name = module.init.dashboard_api_repository_name
+  dashboard_api_env_vars        = local.dashboard_api_env_vars
 }
 

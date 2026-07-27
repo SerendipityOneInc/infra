@@ -357,3 +357,22 @@ variable "grafana_enabled" {
   type    = bool
   default = false
 }
+
+# ---
+# Dashboard API (admin/provisioning API; no Grafana relation)
+# ---
+variable "dashboard_api_count" {
+  type    = number
+  default = 0
+}
+
+variable "dashboard_api_repository_name" {
+  type    = string
+  default = ""
+}
+
+variable "dashboard_api_env_vars" {
+  type      = map(string)
+  default   = {}
+  sensitive = true
+}

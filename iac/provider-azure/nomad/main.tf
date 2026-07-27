@@ -3,14 +3,12 @@
 # that are provider-specific: (1) artifact delivery of the raw Go binaries, and
 # (2) container image references (ACR instead of ECR/Artifact Registry).
 #
-# Scope: the provider-agnostic compute-plane jobs (api, client-proxy,
-# orchestrator, template-manager, autoscaler, ingress, redis). The observability
-# + analytics tier (job-otel-collector, job-otel-collector-nomad-server,
-# job-loki, job-clickhouse) is intentionally NOT instantiated here: those shared
-# modules hard-validate provider_name in {"gcp","aws"} and reject "azure", and
-# module.init does not yet output the Grafana secrets / ClickHouse backup
-# credentials they need. They are deferred until those shared modules gain an
-# Azure branch. See the repo report / PR description.
+# Scope: the compute-plane jobs (api, client-proxy, orchestrator,
+# template-manager, autoscaler, ingress, redis), the in-cluster observability
+# tier (clickhouse, loki, logs-collector, otel-collector — the shared modules
+# gained an azure provider branch), grafana, and dashboard-api
+# (platform-managed mode). Not deployed: otel-collector-nomad-server and
+# docker-reverse-proxy (both serve flows this deployment doesn't use).
 # ============================================================================
 
 # ---
@@ -295,4 +293,21 @@ resource "nomad_job" "grafana" {
     clickhouse_username = var.clickhouse_username
     clickhouse_password = var.clickhouse_password
   })
+}
+
+# Dashboard API: team/user provisioning + admin endpoints. This deployment
+# runs it in platform-managed mode (ADMIN_TOKEN only): the Ory values are
+# non-empty placeholders to satisfy startup validation, and no user-facing
+# OAuth is wired — see the provider README/runbook.
+module "dashboard_api" {
+  source = "../../modules/job-dashboard-api"
+  count  = var.dashboard_api_count > 0 ? 1 : 0
+
+  count_instances = var.dashboard_api_count
+  node_pool       = var.api_node_pool
+  update_stanza   = var.dashboard_api_count > 1
+
+  image = "${var.acr_login_server}/${var.dashboard_api_repository_name}:${var.image_tag}"
+
+  job_env_vars = var.dashboard_api_env_vars
 }
