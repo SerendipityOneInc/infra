@@ -265,6 +265,8 @@ func NewGinServer(ctx context.Context, config cfg.Config, tel *telemetry.Client,
 }
 
 func run() int {
+	applySelfHostedFlagOverrides()
+
 	ctx, cancel := context.WithCancel(context.Background()) // root context
 	defer cancel()
 
@@ -621,6 +623,25 @@ func run() int {
 
 	// Exit, with appropriate code.
 	return int(exitCode.Load())
+}
+
+// applySelfHostedFlagOverrides resolves the feature flags this deployment owns
+// from the environment instead of LaunchDarkly.
+//
+// Self-hosted clusters have no LaunchDarkly project, so every flag falls back
+// to the default compiled into featureflags.flags. PersistentVolumesFlag
+// defaults to env.IsDevelopment(), which means volumes are permanently off in
+// staging and prod with no way to turn them on — even when the deployment has
+// JuiceFS mounted and the orchestrator configured for it.
+//
+// Terraform sets this whenever juicefs_volumes is non-empty, so "the cluster
+// has volumes configured" and "the API accepts volume calls" stay in sync.
+// The override only applies to the offline store, so a real LaunchDarkly
+// project (if one is ever attached) still wins.
+func applySelfHostedFlagOverrides() {
+	if os.Getenv("PERSISTENT_VOLUMES_ENABLED") == "true" {
+		featureflags.OverrideBoolFlag(featureflags.PersistentVolumesFlag, true)
+	}
 }
 
 func main() {

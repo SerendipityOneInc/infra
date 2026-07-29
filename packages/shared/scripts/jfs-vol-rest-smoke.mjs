@@ -1,5 +1,7 @@
 import { Sandbox } from "e2b";
-const API = "https://api.sandbox2.yesy.dev";
+// Same domain the SDK picks up, so this runs against whichever environment
+// E2B_DOMAIN points at rather than only the dev one.
+const API = `https://api.${process.env.E2B_DOMAIN ?? "sandbox2.yesy.dev"}`;
 const KEY = process.env.E2B_API_KEY;
 const marker = "jfs-persist-" + Math.floor(Math.random()*1e9);
 

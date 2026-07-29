@@ -315,6 +315,10 @@ locals {
     DOMAIN_NAME = var.domain_name
     # Volume type new volumes default to (JuiceFS). Empty if no volume mounted.
     DEFAULT_PERSISTENT_VOLUME_TYPE = length(var.juicefs_volumes) > 0 ? local.juicefs_volume_type : ""
+    # Self-hosted clusters have no LaunchDarkly, so the volumes feature flag would
+    # sit at its compiled-in default (on for dev, off everywhere else) with no way
+    # to flip it. Tie it to the volumes actually being configured.
+    PERSISTENT_VOLUMES_ENABLED     = length(var.juicefs_volumes) > 0 ? "true" : "false"
     NOMAD_TOKEN                    = module.init.cluster.nomad_acl_token
     ORCHESTRATOR_PORT              = tostring(var.orchestrator_port)
     API_INTERNAL_GRPC_PORT         = tostring(var.api_internal_grpc_port)
