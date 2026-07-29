@@ -100,6 +100,20 @@ datasources:
       username: ${clickhouse_username}
     secureJsonData:
       password: ${clickhouse_password}
+  - name: E2B Postgres
+    type: postgres
+    uid: e2bpg
+    access: proxy
+    url: ${pg_host}:5432
+    user: grafana_ro
+    editable: false
+    jsonData:
+      database: e2b
+      sslmode: require
+      postgresVersion: 1500
+      maxOpenConns: 4
+    secureJsonData:
+      password: ${pg_ro_password}
 EOT
       }
 
@@ -396,6 +410,185 @@ EOT
       "uid": "loki"
      },
      "expr": "{source=\"logs-collector\"}"
+    }
+   ]
+  }
+ ]
+}
+EOT
+      }
+
+
+      template {
+        destination = "local/dashboards/tenants.json"
+        left_delimiter  = "[["
+        right_delimiter = "]]"
+        data            = <<EOT
+{
+ "uid": "e2b-tenants",
+ "title": "E2B Tenants",
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "refresh": "5m",
+ "time": {
+  "from": "now-24h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "title": "Teams",
+   "type": "table",
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "e2bpg"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "e2bpg"
+     },
+     "rawSql": "SELECT t.name, t.slug, t.tier, t.email, t.is_banned OR t.is_blocked AS blocked, (SELECT count(*) FROM team_api_keys k WHERE k.team_id = t.id) AS api_keys, t.created_at FROM teams t ORDER BY t.created_at",
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "title": "Active sandboxes by team",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "rawSql": "SELECT $__timeInterval(timestamp) AS time, team_id, uniqExact(sandbox_id) AS sandboxes FROM sandbox_metrics_gauge WHERE $__timeFilter(timestamp) GROUP BY time, team_id ORDER BY time",
+     "editorType": "sql",
+     "queryType": "timeseries",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Sandbox CPU by team (avg %)",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 8
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "rawSql": "SELECT $__timeInterval(timestamp) AS time, team_id, avg(value) AS cpu_pct FROM sandbox_metrics_gauge WHERE metric_name = 'e2b.sandbox.cpu.used' AND $__timeFilter(timestamp) GROUP BY time, team_id ORDER BY time",
+     "editorType": "sql",
+     "queryType": "timeseries",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Templates",
+   "type": "table",
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 17
+   },
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "e2bpg"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "e2bpg"
+     },
+     "rawSql": "SELECT e.id AS template_id, (SELECT string_agg(a.alias, ', ') FROM env_aliases a WHERE a.env_id = e.id AND a.namespace IS NULL) AS global_alias, (SELECT string_agg(a.namespace || '/' || a.alias, ', ') FROM env_aliases a WHERE a.env_id = e.id AND a.namespace IS NOT NULL) AS team_alias, e.public, t.name AS team, e.created_at FROM envs e JOIN teams t ON t.id = e.team_id ORDER BY e.created_at DESC",
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code"
+    }
+   ]
+  },
+  {
+   "title": "Recent builds",
+   "type": "table",
+   "gridPos": {
+    "h": 8,
+    "w": 24,
+    "x": 0,
+    "y": 25
+   },
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "e2bpg"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "e2bpg"
+     },
+     "rawSql": "SELECT b.env_id AS template_id, b.status, b.vcpu, b.ram_mb, b.created_at, b.finished_at FROM env_builds b ORDER BY b.created_at DESC LIMIT 50",
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code"
     }
    ]
   }

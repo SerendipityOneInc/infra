@@ -612,6 +612,9 @@ module "nomad" {
 
   grafana_enabled        = true
   grafana_admin_password = module.init.grafana_admin_password
+  # Tenants dashboard reads team/template metadata straight from PG (grafana_ro).
+  grafana_pg_host              = regex("@([^:/?]+)", module.init.postgres_connection_string)[0]
+  grafana_pg_readonly_password = module.init.grafana_pg_readonly_password
 
   # Dashboard API (platform-managed provisioning).
   dashboard_api_count           = var.dashboard_api_count

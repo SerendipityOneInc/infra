@@ -191,3 +191,8 @@ output "grafana_admin_password" {
 output "dashboard_api_repository_name" {
   value = "${var.prefix}core/dashboard-api"
 }
+
+output "grafana_pg_readonly_password" {
+  value     = random_password.grafana_pg_readonly.result
+  sensitive = true
+}

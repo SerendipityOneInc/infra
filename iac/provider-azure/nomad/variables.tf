@@ -376,3 +376,14 @@ variable "dashboard_api_env_vars" {
   default   = {}
   sensitive = true
 }
+
+variable "grafana_pg_host" {
+  type    = string
+  default = ""
+}
+
+variable "grafana_pg_readonly_password" {
+  type      = string
+  default   = ""
+  sensitive = true
+}

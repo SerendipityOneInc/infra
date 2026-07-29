@@ -295,3 +295,17 @@ resource "azurerm_key_vault_secret" "grafana_admin_password" {
 
   depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
 }
+
+# Read-only PG login for the in-cluster Grafana's tenants dashboard.
+resource "random_password" "grafana_pg_readonly" {
+  length  = 24
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "grafana_pg_readonly_password" {
+  name         = "${var.prefix}grafana-pg-readonly-password"
+  key_vault_id = azurerm_key_vault.main.id
+  value        = random_password.grafana_pg_readonly.result
+
+  depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
+}

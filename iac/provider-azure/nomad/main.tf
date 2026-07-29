@@ -292,6 +292,8 @@ resource "nomad_job" "grafana" {
     clickhouse_database = var.clickhouse_database
     clickhouse_username = var.clickhouse_username
     clickhouse_password = var.clickhouse_password
+    pg_host             = var.grafana_pg_host
+    pg_ro_password      = var.grafana_pg_readonly_password
   })
 }
 
