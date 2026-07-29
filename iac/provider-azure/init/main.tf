@@ -27,6 +27,17 @@ resource "azurerm_role_assignment" "instances_blob_data_contributor" {
   principal_id         = azurerm_user_assigned_identity.infra_instances.principal_id
 }
 
+# `make build-and-upload` pushes the orchestrator / template-manager / envd
+# binaries into fc-env-pipeline with `az storage blob upload --auth-mode login`,
+# so whoever runs it needs data-plane access: the control-plane Owner and
+# Contributor roles do not grant it. Same reasoning as
+# deployer_kv_secrets_officer.
+resource "azurerm_role_assignment" "deployer_blob_data_contributor" {
+  scope                = azurerm_storage_account.storage.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = var.deployer_object_id
+}
+
 resource "azurerm_role_assignment" "instances_acr_pull" {
   scope                = azurerm_container_registry.core.id
   role_definition_name = "AcrPull"
