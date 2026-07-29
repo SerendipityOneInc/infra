@@ -105,6 +105,7 @@ module "network" {
   existing_vnet_resource_group = var.existing_vnet_resource_group
   cluster_subnet_cidr          = var.cluster_subnet_cidr
   services_subnet_cidr         = var.services_subnet_cidr
+  appgw_subnet_cidr            = var.appgw_subnet_cidr
   key_vault_name               = var.key_vault_name
 
   # The App Gateway forwards default (api./sandbox/docker.) + grpc-api. traffic to
@@ -155,12 +156,21 @@ module "cloudflare" {
 #   curl -X POST "https://<func>.azurewebsites.net/api/certificate" \
 #     -H "x-functions-key: <api_key>" -H "Content-Type: application/json" \
 #     -d '{"CertificateName":"<name>","DnsNames":["<domain>","*.<domain>"]}'
+#
+# app_base_name feeds globally unique names (storage account st<name>, function
+# app func-<name>.azurewebsites.net), so it must differ per environment. dev
+# claimed the bare "<prefix>-acmebot" first, hence the fallback below; every
+# other environment sets acmebot_app_base_name explicitly in its tfvars.
 # ----------------------------------------------------------------------------
+locals {
+  acmebot_app_base_name = var.acmebot_app_base_name != "" ? var.acmebot_app_base_name : "${trimsuffix(var.prefix, "-")}-acmebot"
+}
+
 module "acmebot" {
   source  = "shibayan/keyvault-acmebot/azurerm"
   version = "3.1.4"
 
-  app_base_name       = "${trimsuffix(var.prefix, "-")}-acmebot"
+  app_base_name       = local.acmebot_app_base_name
   resource_group_name = azurerm_resource_group.main.name
   location            = var.location
   mail_address        = var.acmebot_mail_address
@@ -195,41 +205,61 @@ locals {
   internal_cert_name   = replace(local.internal_domain_name, ".", "-")
 }
 
-# One-time first issuance, encoded in terraform so a fresh environment needs no
-# manual API call. Idempotent: acmebot upserts by certificate name; renewals
-# afterwards are handled by acmebot's own timer (no terraform involved).
-resource "null_resource" "acmebot_first_issuance" {
-  for_each = {
+locals {
+  acmebot_first_certs = {
     (local.public_cert_name)   = var.domain_name
     (local.internal_cert_name) = local.internal_domain_name
   }
+}
 
+# One-time first issuance, encoded in terraform so a fresh environment needs no
+# manual API call. Idempotent: acmebot upserts by certificate name; renewals
+# afterwards are handled by acmebot's own timer (no terraform involved).
+#
+# One resource issuing every certificate in sequence, NOT for_each: the first
+# request against a brand-new acmebot also registers its ACME account, and two
+# concurrent registrations leave the losing order's authorization bound to the
+# discarded account. Answering its challenge then fails with HTTP 403 "User
+# account ID doesn't match account ID in authorization".
+resource "null_resource" "acmebot_first_issuance" {
   triggers = {
-    certificate = each.key
+    certificates = join(",", sort(keys(local.acmebot_first_certs)))
   }
 
   provisioner "local-exec" {
     command = <<-EOT
       set -euo pipefail
-      FUNC="func-${trimsuffix(var.prefix, "-")}-acmebot"
+      FUNC="func-${local.acmebot_app_base_name}"
       FKEY=$(az functionapp keys list -g ${azurerm_resource_group.main.name} -n "$FUNC" --query "functionKeys.default" -o tsv)
       BASE="https://$FUNC.azurewebsites.net/api"
-      # Skip if the cert already exists (re-runs must not burn LE duplicate quota).
-      if curl -sf -m 30 "$BASE/certificates" -H "x-functions-key: $FKEY" | grep -q '"name":"${each.key}"'; then
-        echo "certificate ${each.key} already present"; exit 0
-      fi
-      curl -sf -m 180 -X POST "$BASE/certificate" \
-        -H "x-functions-key: $FKEY" -H "Content-Type: application/json" \
-        -d '{"CertificateName":"${each.key}","DnsNames":["${each.value}","*.${each.value}"]}'
-      # Issuance is async (202): wait until the cert lands in Key Vault so that
-      # anything referencing the KV secret (App Gateway) applies after it exists.
-      for i in $(seq 1 30); do
-        sleep 10
-        if curl -sf -m 30 "$BASE/certificates" -H "x-functions-key: $FKEY" | grep -q '"name":"${each.key}"'; then
-          echo "certificate ${each.key} issued"; exit 0
+
+      has_cert() {
+        curl -sf -m 30 "$BASE/certificates" -H "x-functions-key: $FKEY" | grep -q "\"name\":\"$1\""
+      }
+
+      issue() {
+        NAME="$1"; DOMAIN="$2"
+        # Skip if the cert already exists (re-runs must not burn LE duplicate quota).
+        if has_cert "$NAME"; then
+          echo "certificate $NAME already present"; return 0
         fi
-      done
-      echo "timed out waiting for certificate ${each.key}" >&2; exit 1
+        curl -sf -m 180 -X POST "$BASE/certificate" \
+          -H "x-functions-key: $FKEY" -H "Content-Type: application/json" \
+          -d "{\"CertificateName\":\"$NAME\",\"DnsNames\":[\"$DOMAIN\",\"*.$DOMAIN\"]}"
+        # Issuance is async (202): wait until the cert lands in Key Vault so that
+        # anything referencing the KV secret (App Gateway) applies after it exists.
+        for i in $(seq 1 30); do
+          sleep 10
+          if has_cert "$NAME"; then
+            echo "certificate $NAME issued"; return 0
+          fi
+        done
+        echo "timed out waiting for certificate $NAME" >&2; return 1
+      }
+
+      %{~for name, domain in local.acmebot_first_certs}
+      issue "${name}" "${domain}"
+      %{~endfor}
     EOT
   }
 

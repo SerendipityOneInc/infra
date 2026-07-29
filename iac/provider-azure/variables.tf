@@ -41,6 +41,18 @@ variable "acmebot_mail_address" {
   default     = "allenz@srp.one"
 }
 
+variable "acmebot_app_base_name" {
+  type        = string
+  description = <<-EOT
+    Base name for the keyvault-acmebot resources. The module derives globally
+    unique names from it (storage account st<name>, function app func-<name>),
+    so every environment needs its own value. Empty falls back to
+    "<prefix>-acmebot", which dev already owns — set it explicitly for any
+    other environment.
+  EOT
+  default     = ""
+}
+
 variable "environment" {
   type        = string
   description = "The deployment environment (dev, staging, prod)"
@@ -371,6 +383,17 @@ variable "services_subnet_cidr" {
   type        = string
   description = "CIDR for the e2b auxiliary services subnet."
   default     = "10.0.16.0/20"
+}
+
+variable "appgw_subnet_cidr" {
+  type        = string
+  description = <<-EOT
+    CIDR for the dedicated Application Gateway v2 subnet (the gateway requires a
+    subnet of its own). When co-locating on an existing VNet this must fall
+    inside that VNet's address space, so every such environment overrides it.
+    The default is the free /24 in the dev VNet.
+  EOT
+  default     = "10.180.160.0/24"
 }
 
 # --- Reuse the base-infra Postgres Flexible Server (create the e2b DB on it) ---
