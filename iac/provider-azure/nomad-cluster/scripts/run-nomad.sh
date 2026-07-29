@@ -105,7 +105,7 @@ client {
   meta {
     "node_pool" = "$node_pool"
     "node_labels" = "${node_labels:-}"
-    "orchestrator_version" = "${orchestrator_job_version:-}"
+    "orchestrator_job_version" = "${orchestrator_job_version:-}"
     ${job_constraint:+"\"job_constraint\"" = "\"$job_constraint\""}
   }
   max_kill_timeout = "24h"$host_volume_config
