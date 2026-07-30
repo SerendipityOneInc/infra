@@ -50,10 +50,40 @@ job "client-proxy" {
         "traefik.http.routers.client-proxy.rule=PathPrefix(`/`)",
         "traefik.http.routers.client-proxy.ruleSyntax=v2",
         "traefik.http.routers.client-proxy.priority=100",
+        # Bind explicitly: Traefik only infers the service when exactly one is
+        # declared here, and the websocket router below adds a second.
+        "traefik.http.routers.client-proxy.service=client-proxy",
 
         "traefik.http.services.client-proxy.loadbalancer.server.port=$${NOMAD_PORT_proxy}",
         # h2c on the secure path so bidirectional HTTP/2 (PTY) survives to envd.
-        "traefik.http.services.client-proxy.loadbalancer.server.scheme=${backend_scheme}"
+        "traefik.http.services.client-proxy.loadbalancer.server.scheme=${backend_scheme}",
+%{ if backend_scheme == "h2c" ~}
+
+        # HTTP/2 cannot carry an HTTP/1.1 Upgrade, so with an h2c backend a
+        # WebSocket handshake dies at this hop — which is what makes noVNC
+        # (computer-use live view) and CDP-from-outside unreachable.
+        #
+        # Send only upgrade requests over HTTP/1.1, on a higher-priority router
+        # pointing at the same port. client-proxy serves both protocols there
+        # (ConfigureH2C wraps an ordinary HTTP/1.1 server), and its transport to
+        # the sandbox sets ForceAttemptHTTP2=false, so ReverseProxy carries the
+        # upgrade the rest of the way.
+        #
+        # No ruleSyntax here: this router uses v3 syntax, where the matcher is
+        # HeaderRegexp. Under the v2 syntax the routers above declare it would
+        # be HeadersRegexp, and the mismatch silently fails to parse.
+        #
+        # The match must not catch h2c upgrades or PTY breaks: those carry
+        # `Upgrade: h2c` with `Connection: HTTP2-Settings`, so anchoring on the
+        # websocket token keeps them on the h2c router.
+        "traefik.http.routers.client-proxy-ws.entrypoints=${entrypoints}",
+        "traefik.http.routers.client-proxy-ws.rule=PathPrefix(`/`) && HeaderRegexp(`Upgrade`, `(?i)^websocket`)",
+        "traefik.http.routers.client-proxy-ws.priority=200",
+        "traefik.http.routers.client-proxy-ws.service=client-proxy-ws",
+
+        "traefik.http.services.client-proxy-ws.loadbalancer.server.port=$${NOMAD_PORT_proxy}",
+        "traefik.http.services.client-proxy-ws.loadbalancer.server.scheme=http"
+%{ endif ~}
       ]
 
       check {
