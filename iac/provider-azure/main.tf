@@ -615,8 +615,9 @@ module "nomad" {
   orchestrator_env_vars   = local.orchestrator_env_vars
 
   # Template manager.
-  template_manager_port     = local.template_manager_port
-  template_manager_env_vars = local.template_manager_env_vars
+  template_manager_port          = local.template_manager_port
+  template_manager_env_vars      = local.template_manager_env_vars
+  template_manager_memory_max_mb = var.template_manager_memory_max_mb
 
   # Redis.
   redis_managed = var.redis_managed

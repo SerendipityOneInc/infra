@@ -109,7 +109,7 @@ job "template-manager" {
 
       resources {
         memory     = 1024
-        memory_max = -1
+        memory_max = ${memory_max_mb}
       }
 
       env {

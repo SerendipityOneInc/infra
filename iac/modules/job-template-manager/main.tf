@@ -28,5 +28,6 @@ resource "nomad_job" "template_manager" {
     port            = var.port
     artifact_source = var.artifact_source
     job_env_vars    = local.job_env_vars
+    memory_max_mb   = var.memory_max_mb
   })
 }

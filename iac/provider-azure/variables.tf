@@ -284,6 +284,19 @@ variable "build_max_instances" {
   default     = null
 }
 
+variable "template_manager_memory_max_mb" {
+  type        = number
+  description = <<-EOT
+    Nomad memory_max for the template-manager task, in MiB. -1 (the default)
+    lets it oversubscribe without bound: a burst of concurrent builds then
+    exhausts the build node and Firecracker restores fail with "mmap memfd:
+    cannot allocate memory". Set it below node memory so Nomad kills the task
+    instead of the node running out. Pair it with the team tier's
+    concurrent_template_builds, which is what actually caps the burst.
+  EOT
+  default     = -1
+}
+
 variable "control_server_cluster_size" {
   type    = number
   default = 3

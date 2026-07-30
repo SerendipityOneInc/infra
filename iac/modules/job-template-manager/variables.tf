@@ -2,6 +2,19 @@ variable "node_pool" {
   type = string
 }
 
+variable "memory_max_mb" {
+  type        = number
+  description = <<-EOT
+    Nomad memory_max for the template-manager task, in MiB. -1 (the default,
+    and the historical behaviour) lets it oversubscribe without bound, so a
+    burst of concurrent builds exhausts the whole build node and Firecracker
+    restores start failing with "mmap memfd: cannot allocate memory". Setting
+    a ceiling below node memory makes Nomad kill the task instead, which fails
+    loudly rather than taking the node down with it.
+  EOT
+  default     = -1
+}
+
 variable "port" {
   type = number
 }

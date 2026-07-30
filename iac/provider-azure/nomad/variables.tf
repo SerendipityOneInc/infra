@@ -211,6 +211,12 @@ variable "template_manager_env_vars" {
   sensitive = true
 }
 
+variable "template_manager_memory_max_mb" {
+  type        = number
+  description = "Nomad memory_max for template-manager, in MiB. -1 = unbounded (default)."
+  default     = -1
+}
+
 # Redis
 variable "redis_managed" {
   type    = bool

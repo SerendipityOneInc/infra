@@ -162,6 +162,7 @@ module "template_manager" {
 
   artifact_source = local.template_manager_artifact_source
   job_env_vars    = var.template_manager_env_vars
+  memory_max_mb   = var.template_manager_memory_max_mb
 
   nomad_addr  = "https://nomad.${var.domain_name}"
   nomad_token = var.nomad_acl_token
