@@ -278,6 +278,13 @@ func NewIntFlag(name string, fallback int) IntFlag {
 	return flag
 }
 
+// OverrideIntFlag forces an int flag to a specific value in the offline store.
+// Only takes effect when LAUNCH_DARKLY_API_KEY is not set (i.e. self-hosted).
+func OverrideIntFlag(flag IntFlag, value int) {
+	builder := launchDarklyOfflineStore.Flag(flag.name).ValueForAll(ldvalue.Int(value))
+	launchDarklyOfflineStore.Update(builder)
+}
+
 var (
 	MaxSandboxesPerNode = NewIntFlag("max-sandboxes-per-node", 200)
 	// The LD keys keep the legacy "gcloud-" prefix, but the limits apply to uploads on all storage providers.
