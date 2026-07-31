@@ -1,7 +1,25 @@
 #!/bin/bash
 # Mirror the Makefile tf_vars so terraform can be driven directly (import/plan/apply).
+#
+# Follow .last_used_env the way every Makefile here does. This used to source a
+# fixed env file, which meant sourcing one environment's credentials while
+# .last_used_env — and therefore the Makefile, the var-file and the backend —
+# pointed at another. Env files are named .env.<provider>-<environment>.
+# No set -e/-u here: this file is sourced, so they would leak into the caller's
+# shell, and the optional-passthrough loop below probes unset variables on purpose.
+ENV=$(cat ../../.last_used_env 2>/dev/null || true)
+if [ -z "$ENV" ]; then
+  echo "no ../../.last_used_env; run 'make switch-env ENV=<provider>-<environment>' first" >&2
+  return 1 2>/dev/null || exit 1
+fi
+ENV_FILE="../../.env.$ENV"
+if [ ! -f "$ENV_FILE" ]; then
+  echo "$ENV_FILE not found (ENV=$ENV)" >&2
+  return 1 2>/dev/null || exit 1
+fi
+echo "tfenv: sourcing $ENV_FILE" >&2
 set -a
-source ../../.env.azure
+source "$ENV_FILE"
 set +a
 export ARM_SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID"
 export ARM_TENANT_ID="$AZURE_TENANT_ID"
