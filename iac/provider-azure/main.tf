@@ -230,7 +230,10 @@ resource "null_resource" "acmebot_first_issuance" {
     command = <<-EOT
       set -euo pipefail
       FUNC="func-${local.acmebot_app_base_name}"
-      FKEY=$(az functionapp keys list -g ${azurerm_resource_group.main.name} -n "$FUNC" --query "functionKeys.default" -o tsv)
+      # Pin the subscription: az defaults to whatever the operator last selected,
+      # which is not necessarily the one terraform is applying to. Without this the
+      # lookup fails with ResourceGroupNotFound against an unrelated subscription.
+      FKEY=$(az functionapp keys list --subscription ${var.subscription_id} -g ${azurerm_resource_group.main.name} -n "$FUNC" --query "functionKeys.default" -o tsv)
       BASE="https://$FUNC.azurewebsites.net/api"
 
       has_cert() {
