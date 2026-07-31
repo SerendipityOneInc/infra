@@ -2,7 +2,7 @@
 # (managed by azure-foundation) but owns the `e2b` DATABASE it needs, created via
 # the ARM control plane (no data-plane/VNet connectivity required). The app
 # connects with the server admin credentials against this database
-# (POSTGRES_CONNECTION_STRING in .env.azure); the database is isolated per-app.
+# (POSTGRES_CONNECTION_STRING in .env.<provider>-<environment>); the database is isolated per-app.
 # A dedicated Postgres role is intentionally not created here — that is a
 # data-plane operation against the private server and stays out of this stack.
 

@@ -117,7 +117,7 @@ ifeq ($(PROVIDER),aws)
 else ifeq ($(PROVIDER),azure)
 	# Same download path as AWS (anonymous read of e2b's public GCS bucket via the
 	# S3-compat endpoint), then upload into the per-role blob containers created by
-	# provider-azure/init. AZURE_STORAGE_ACCOUNT comes from .env.azure.
+	# provider-azure/init. AZURE_STORAGE_ACCOUNT comes from .env.<provider>-<environment>.
 	mkdir -p ./.kernels
 	mkdir -p ./.firecrackers
 	mkdir -p ./.busybox
