@@ -448,6 +448,8 @@ locals {
 module "cluster" {
   source = "./nomad-cluster"
 
+  subscription_id = var.subscription_id
+
   prefix              = var.prefix
   resource_group_name = azurerm_resource_group.main.name
   location            = var.location

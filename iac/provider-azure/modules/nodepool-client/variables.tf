@@ -221,3 +221,10 @@ variable "scale_in_memory_free_bytes" {
   default     = null
   description = "Additional scale-in condition: only scale in when average available memory exceeds this many bytes (Azure ANDs all scale-in rules)."
 }
+
+
+variable "subscription_id" {
+  type        = string
+  default     = ""
+  description = "Subscription the scale set lives in. Only needed for the NVMe fixup below, which shells out to az."
+}

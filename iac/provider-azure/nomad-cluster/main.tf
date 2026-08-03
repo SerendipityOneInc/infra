@@ -165,6 +165,8 @@ module "clickhouse" {
 module "build" {
   source = "../modules/nodepool-client"
 
+  subscription_id = var.subscription_id
+
   name                = "orch-build"
   prefix              = var.prefix
   resource_group_name = var.resource_group_name
@@ -219,6 +221,8 @@ module "build" {
 
 module "client" {
   source = "../modules/nodepool-client"
+
+  subscription_id = var.subscription_id
 
   name                = "orch-client"
   prefix              = var.prefix

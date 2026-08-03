@@ -275,3 +275,10 @@ variable "client_scale_in_memory_free_bytes" {
   type    = number
   default = null
 }
+
+
+variable "subscription_id" {
+  type        = string
+  default     = ""
+  description = "Subscription the cluster lives in; passed to the pools for the NVMe disk-controller fixup."
+}

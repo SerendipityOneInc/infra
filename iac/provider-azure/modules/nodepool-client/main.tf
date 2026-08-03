@@ -221,3 +221,59 @@ resource "azurerm_monitor_autoscale_setting" "client" {
 
   tags = var.tags
 }
+
+# ---------------------------------------------------------------------------
+# Disk controller fixup for v6 SKUs.
+#
+# The v6 families boot only from NVMe, and azurerm has no diskControllerType on
+# azurerm_linux_virtual_machine_scale_set — it exists on azurerm_linux_virtual_machine
+# but not on either scale set resource, as of provider 4.81. So terraform creates
+# the scale set with the default SCSI and Azure rejects the v6 size.
+#
+# Setting it out of band is not a workaround around terraform so much as filling a
+# gap in it: the property is absent from the schema, so terraform never reads or
+# diffs it and a later plan stays clean (verified on dev — the pool disappeared
+# from the plan entirely once SKU and image matched).
+#
+# Three constraints have to be satisfied in one call: a v5 size cannot boot NVMe,
+# a v6 size cannot boot SCSI, and the image must declare DiskControllerTypes.
+# Changing the controller also requires the instances to be deallocated, hence the
+# stop/update/start below rather than a plain update-instances.
+locals {
+  needs_nvme = can(regex("_v6$", var.machine_type))
+}
+
+resource "null_resource" "nvme_disk_controller" {
+  count = local.needs_nvme && var.subscription_id != "" ? 1 : 0
+
+  triggers = {
+    scale_set = azurerm_linux_virtual_machine_scale_set.client.id
+    sku       = var.machine_type
+    image     = var.image_id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -euo pipefail
+      RG="${var.resource_group_name}"
+      NAME="${azurerm_linux_virtual_machine_scale_set.client.name}"
+      SUB="${var.subscription_id}"
+
+      CURRENT=$(az vmss show -g "$RG" -n "$NAME" --subscription "$SUB" \
+        --query "virtualMachineProfile.storageProfile.diskControllerType" -o tsv)
+      if [ "$CURRENT" = "NVMe" ]; then
+        echo "$NAME already on NVMe"; exit 0
+      fi
+
+      echo "$NAME: switching disk controller to NVMe"
+      az vmss update -g "$RG" -n "$NAME" --subscription "$SUB" \
+        --set virtualMachineProfile.storageProfile.diskControllerType=NVMe -o none
+
+      # Instances keep the old model until told otherwise, and the controller
+      # cannot change on a running VM.
+      az vmss deallocate -g "$RG" -n "$NAME" --subscription "$SUB" -o none
+      az vmss update-instances -g "$RG" -n "$NAME" --instance-ids '*' --subscription "$SUB" -o none
+      az vmss start -g "$RG" -n "$NAME" --subscription "$SUB" -o none
+    EOT
+  }
+}
