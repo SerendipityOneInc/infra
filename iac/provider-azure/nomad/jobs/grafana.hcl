@@ -287,128 +287,208 @@ EOT
  "timezone": "browser",
  "schemaVersion": 39,
  "refresh": "1m",
+ "templating": {
+  "list": [
+   {
+    "name": "sandbox_id",
+    "label": "Sandbox",
+    "type": "query",
+    "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+    "query": "SELECT DISTINCT sandbox_id FROM sandbox_metrics_gauge WHERE timestamp > now() - INTERVAL 6 HOUR ORDER BY sandbox_id",
+    "refresh": 2,
+    "includeAll": true,
+    "allValue": ".*",
+    "multi": true,
+    "current": { "text": ["All"], "value": ["$__all"] },
+    "sort": 1
+   }
+  ]
+ },
  "time": {
   "from": "now-6h",
   "to": "now"
  },
  "panels": [
   {
+   "id": 100,
+   "type": "row",
+   "title": "Summary — aggregate over selected sandboxes",
+   "collapsed": false,
+   "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+   "panels": []
+  },
+  {
+   "id": 1,
    "title": "Active sandboxes",
+   "description": "Distinct sandboxes reporting metrics in each interval.",
    "type": "timeseries",
-   "gridPos": {
-    "h": 9,
-    "w": 12,
-    "x": 0,
-    "y": 0
-   },
-   "datasource": {
-    "type": "grafana-clickhouse-datasource",
-    "uid": "clickhouse"
-   },
+   "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+   "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
    "fieldConfig": {
-    "defaults": {},
+    "defaults": { "unit": "none", "decimals": 0, "custom": { "fillOpacity": 10, "showPoints": "never" } },
     "overrides": []
    },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
    "targets": [
     {
      "refId": "A",
-     "datasource": {
-      "type": "grafana-clickhouse-datasource",
-      "uid": "clickhouse"
-     },
+     "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
      "editorType": "sql", "queryType": "timeseries",
-     "rawSql": "SELECT $__timeInterval(timestamp) AS time, uniqExact(sandbox_id) AS sandboxes FROM sandbox_metrics_gauge WHERE $__timeFilter(timestamp) GROUP BY time ORDER BY time",
+     "rawSql": "SELECT $__timeInterval(timestamp) AS time, uniqExact(sandbox_id) AS sandboxes FROM sandbox_metrics_gauge WHERE $__timeFilter(timestamp) AND match(sandbox_id, '^($$${sandbox_id:regex})$') GROUP BY time ORDER BY time",
      "format": 1,
      "pluginVersion": "4.20.0"
     }
    ]
   },
   {
-   "title": "Sandbox CPU used (%)",
+   "id": 2,
+   "title": "Total vCPU — used vs allocated",
+   "description": "used = sum over sandboxes of cpu.used% x cpu.total. allocated = sum of cpu.total. Compare against the node's physical vCPU count to see oversubscription.",
    "type": "timeseries",
-   "gridPos": {
-    "h": 9,
-    "w": 12,
-    "x": 12,
-    "y": 0
-   },
-   "datasource": {
-    "type": "grafana-clickhouse-datasource",
-    "uid": "clickhouse"
-   },
+   "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+   "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
    "fieldConfig": {
-    "defaults": {},
-    "overrides": []
+    "defaults": { "unit": "none", "decimals": 2, "custom": { "fillOpacity": 10, "showPoints": "never" } },
+    "overrides": [
+     { "matcher": { "id": "byName", "options": "vcpu_allocated" },
+       "properties": [ { "id": "custom.fillOpacity", "value": 0 }, { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } } ] }
+    ]
    },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
    "targets": [
     {
      "refId": "A",
-     "datasource": {
-      "type": "grafana-clickhouse-datasource",
-      "uid": "clickhouse"
-     },
+     "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
      "editorType": "sql", "queryType": "timeseries",
-     "rawSql": "SELECT $__timeInterval(timestamp) AS time, sandbox_id, avg(value) AS cpu_pct FROM sandbox_metrics_gauge WHERE metric_name = 'e2b.sandbox.cpu.used' AND $__timeFilter(timestamp) GROUP BY time, sandbox_id ORDER BY time",
+     "rawSql": "SELECT time, sum(used) AS vcpu_used, sum(total) AS vcpu_allocated FROM (SELECT $__timeInterval(timestamp) AS time, sandbox_id, avgIf(value, metric_name = 'e2b.sandbox.cpu.total') AS total, avgIf(value, metric_name = 'e2b.sandbox.cpu.used') / 100 * total AS used FROM sandbox_metrics_gauge WHERE metric_name IN ('e2b.sandbox.cpu.used', 'e2b.sandbox.cpu.total') AND $__timeFilter(timestamp) AND match(sandbox_id, '^($$${sandbox_id:regex})$') GROUP BY time, sandbox_id) GROUP BY time ORDER BY time",
      "format": 1,
      "pluginVersion": "4.20.0"
     }
    ]
   },
   {
-   "title": "Sandbox RAM used (GiB)",
+   "id": 3,
+   "title": "Total RAM — used vs allocated",
+   "description": "used = sum of ram.used. allocated = sum of ram.total (what the templates asked for). The gap is memory paid for but not touched.",
    "type": "timeseries",
-   "gridPos": {
-    "h": 9,
-    "w": 12,
-    "x": 0,
-    "y": 9
-   },
-   "datasource": {
-    "type": "grafana-clickhouse-datasource",
-    "uid": "clickhouse"
-   },
+   "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+   "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
    "fieldConfig": {
-    "defaults": {},
-    "overrides": []
+    "defaults": { "unit": "bytes", "custom": { "fillOpacity": 10, "showPoints": "never" } },
+    "overrides": [
+     { "matcher": { "id": "byName", "options": "ram_allocated" },
+       "properties": [ { "id": "custom.fillOpacity", "value": 0 }, { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } } ] }
+    ]
    },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
    "targets": [
     {
      "refId": "A",
-     "datasource": {
-      "type": "grafana-clickhouse-datasource",
-      "uid": "clickhouse"
-     },
+     "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
      "editorType": "sql", "queryType": "timeseries",
-     "rawSql": "SELECT $__timeInterval(timestamp) AS time, sandbox_id, max(value)/1073741824 AS ram_gib FROM sandbox_metrics_gauge WHERE metric_name = 'e2b.sandbox.ram.used' AND $__timeFilter(timestamp) GROUP BY time, sandbox_id ORDER BY time",
+     "rawSql": "SELECT time, sum(used) AS ram_used, sum(total) AS ram_allocated FROM (SELECT $__timeInterval(timestamp) AS time, sandbox_id, maxIf(value, metric_name = 'e2b.sandbox.ram.used') AS used, maxIf(value, metric_name = 'e2b.sandbox.ram.total') AS total FROM sandbox_metrics_gauge WHERE metric_name IN ('e2b.sandbox.ram.used', 'e2b.sandbox.ram.total') AND $__timeFilter(timestamp) AND match(sandbox_id, '^($$${sandbox_id:regex})$') GROUP BY time, sandbox_id) GROUP BY time ORDER BY time",
      "format": 1,
      "pluginVersion": "4.20.0"
     }
    ]
   },
   {
+   "id": 101,
+   "type": "row",
+   "title": "Per-sandbox detail — one line per sandbox",
+   "collapsed": false,
+   "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+   "panels": []
+  },
+  {
+   "id": 4,
+   "title": "CPU used (%) per sandbox",
+   "description": "Percentage of the sandbox's own vCPU allocation. Pick specific sandboxes in the Sandbox variable — with All selected this draws one line per active sandbox.",
+   "type": "timeseries",
+   "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+   "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+   "fieldConfig": {
+    "defaults": { "unit": "percent", "min": 0, "custom": { "fillOpacity": 0, "showPoints": "never" } },
+    "overrides": []
+   },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+   "transformations": [
+    { "id": "partitionByValues", "options": { "fields": ["sandbox_id"], "keepFields": false, "naming": { "asLabels": false } } }
+   ],
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(timestamp) AS time, sandbox_id, avg(value) AS cpu_pct FROM sandbox_metrics_gauge WHERE metric_name = 'e2b.sandbox.cpu.used' AND $__timeFilter(timestamp) AND match(sandbox_id, '^($$${sandbox_id:regex})$') GROUP BY time, sandbox_id ORDER BY time, sandbox_id",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "title": "RAM used per sandbox",
+   "description": "ram.used per sandbox. Does not include page cache (see ram.cache).",
+   "type": "timeseries",
+   "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
+   "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+   "fieldConfig": {
+    "defaults": { "unit": "bytes", "min": 0, "custom": { "fillOpacity": 0, "showPoints": "never" } },
+    "overrides": []
+   },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+   "transformations": [
+    { "id": "partitionByValues", "options": { "fields": ["sandbox_id"], "keepFields": false, "naming": { "asLabels": false } } }
+   ],
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(timestamp) AS time, sandbox_id, max(value) AS ram_used FROM sandbox_metrics_gauge WHERE metric_name = 'e2b.sandbox.ram.used' AND $__timeFilter(timestamp) AND match(sandbox_id, '^($$${sandbox_id:regex})$') GROUP BY time, sandbox_id ORDER BY time, sandbox_id",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "title": "Disk used per sandbox",
+   "description": "disk.used per sandbox — the writable overlay on the node's local NVMe.",
+   "type": "timeseries",
+   "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
+   "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+   "fieldConfig": {
+    "defaults": { "unit": "bytes", "min": 0, "custom": { "fillOpacity": 0, "showPoints": "never" } },
+    "overrides": []
+   },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+   "transformations": [
+    { "id": "partitionByValues", "options": { "fields": ["sandbox_id"], "keepFields": false, "naming": { "asLabels": false } } }
+   ],
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(timestamp) AS time, sandbox_id, max(value) AS disk_used FROM sandbox_metrics_gauge WHERE metric_name = 'e2b.sandbox.disk.used' AND $__timeFilter(timestamp) AND match(sandbox_id, '^($$${sandbox_id:regex})$') GROUP BY time, sandbox_id ORDER BY time, sandbox_id",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "id": 7,
    "title": "Recent sandbox logs",
    "type": "logs",
-   "gridPos": {
-    "h": 9,
-    "w": 12,
-    "x": 12,
-    "y": 9
-   },
-   "datasource": {
-    "type": "loki",
-    "uid": "loki"
-   },
-   "fieldConfig": {
-    "defaults": {},
-    "overrides": []
-   },
+   "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
+   "datasource": { "type": "loki", "uid": "loki" },
+   "fieldConfig": { "defaults": {}, "overrides": [] },
    "targets": [
     {
      "refId": "A",
-     "datasource": {
-      "type": "loki",
-      "uid": "loki"
-     },
+     "datasource": { "type": "loki", "uid": "loki" },
      "expr": "{source=\"logs-collector\"}"
     }
    ]
