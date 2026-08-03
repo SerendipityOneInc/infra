@@ -222,24 +222,6 @@ variable "scale_in_memory_free_bytes" {
   description = "Additional scale-in condition: only scale in when average available memory exceeds this many bytes (Azure ANDs all scale-in rules)."
 }
 
-variable "proximity_placement_group_id" {
-  type        = string
-  default     = ""
-  description = <<-EOT
-    Pin every instance in this pool to one physical cluster.
-
-    Azure guarantees a SKU's vCPU and memory, not its CPU model: instances of the
-    same E32ads_v5 landed on EPYC 9V74 (Genoa, model 17) and EPYC 7763 (Milan,
-    model 1) in different fault domains. e2b filters placement on CPU model
-    (machineinfo.IsCompatibleWith), and its cross-generation whitelist covers only
-    Intel — on AMD the comparison degrades to exact equality. A node whose model
-    differs from the one a template was built on therefore never receives a single
-    sandbox, and the cluster's capacity is one node's worth however many nodes run.
-
-    Requires single_placement_group = true, which is why setting this forces the
-    scale set to be replaced.
-  EOT
-}
 
 variable "subscription_id" {
   type        = string

@@ -57,14 +57,9 @@ resource "azurerm_linux_virtual_machine_scale_set" "client" {
   admin_password                  = var.admin_password
   disable_password_authentication = false
 
-  upgrade_mode  = "Manual"
-  overprovision = false
-
-  # A proximity placement group only holds if the scale set stays in one
-  # placement group; spanning several would defeat the co-location it buys.
-  # true caps the set at 100 instances, well above the autoscale ceiling.
-  single_placement_group       = var.proximity_placement_group_id != ""
-  proximity_placement_group_id = var.proximity_placement_group_id != "" ? var.proximity_placement_group_id : null
+  upgrade_mode           = "Manual"
+  overprovision          = false
+  single_placement_group = false
 
   source_image_id = var.image_id != "" ? var.image_id : null
   dynamic "source_image_reference" {

@@ -276,17 +276,6 @@ variable "client_scale_in_memory_free_bytes" {
   default = null
 }
 
-variable "enable_firecracker_ppg" {
-  type        = bool
-  default     = false
-  description = <<-EOT
-    Put the build and client pools in one proximity placement group so every
-    Firecracker host lands on the same physical cluster, and therefore the same
-    CPU generation. Off by default: turning it on replaces both scale sets, and
-    pinning to one cluster means scale-out can fail with AllocationFailed once
-    that cluster is full. See the resource comment in nomad-cluster/main.tf.
-  EOT
-}
 
 variable "subscription_id" {
   type        = string

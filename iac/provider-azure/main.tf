@@ -448,8 +448,7 @@ locals {
 module "cluster" {
   source = "./nomad-cluster"
 
-  enable_firecracker_ppg = var.enable_firecracker_ppg
-  subscription_id        = var.subscription_id
+  subscription_id = var.subscription_id
 
   prefix              = var.prefix
   resource_group_name = azurerm_resource_group.main.name
