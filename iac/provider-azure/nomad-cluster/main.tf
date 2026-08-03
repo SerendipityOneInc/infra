@@ -162,8 +162,45 @@ module "clickhouse" {
   tags = var.tags
 }
 
+# ----------------------------------------------------------------------------
+# Proximity placement group for the Firecracker pools (build + client).
+#
+# Azure guarantees a SKU's vCPU and memory, not the CPU model behind it. On
+# staging two E32ads_v5 instances of the same scale set came up as EPYC 9V74
+# (Genoa) and EPYC 7763 (Milan), one per fault domain, and rebuilding the second
+# reproduced Milan rather than shuffling it.
+#
+# That matters because e2b filters placement on CPU model. A template records the
+# CPU it was built on, and machineinfo.IsCompatibleWith only permits a different
+# model when the pair is in a hardcoded whitelist that today lists Intel Ice Lake
+# -> Emerald Rapids and nothing else. On AMD it reduces to exact equality, so the
+# mismatched node received zero sandboxes ever while still being billed, and the
+# cluster topped out at one node's 200-sandbox cap.
+#
+# Build and client share the group deliberately: a template built on one
+# generation is unplaceable on the other, so the two pools have to agree.
+#
+# allowed_vm_sizes is the intent — Azure picks a cluster that can serve every
+# size listed, instead of discovering at scale-out time that it cannot.
+resource "azurerm_proximity_placement_group" "firecracker" {
+  count               = var.enable_firecracker_ppg ? 1 : 0
+  name                = "${var.prefix}firecracker-ppg"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+
+  allowed_vm_sizes = distinct([var.client_machine_type, var.build_machine_type])
+
+  # zone is deliberately unset: pinning the group to one availability zone would
+  # force both scale sets into it too, trading zone redundancy for a guarantee
+  # the group already provides by co-locating on one cluster.
+  tags = var.tags
+}
+
 module "build" {
   source = "../modules/nodepool-client"
+
+  proximity_placement_group_id = var.enable_firecracker_ppg ? azurerm_proximity_placement_group.firecracker[0].id : ""
+  subscription_id              = var.subscription_id
 
   name                = "orch-build"
   prefix              = var.prefix
@@ -219,6 +256,9 @@ module "build" {
 
 module "client" {
   source = "../modules/nodepool-client"
+
+  proximity_placement_group_id = var.enable_firecracker_ppg ? azurerm_proximity_placement_group.firecracker[0].id : ""
+  subscription_id              = var.subscription_id
 
   name                = "orch-client"
   prefix              = var.prefix
