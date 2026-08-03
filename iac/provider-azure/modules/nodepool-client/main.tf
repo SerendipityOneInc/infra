@@ -47,6 +47,10 @@ locals {
 # the nomad-cluster module: once as the client pool, once as the build pool.
 # Mirrors provider-aws nodepool-client.
 resource "azurerm_linux_virtual_machine_scale_set" "client" {
+  # The v6 transition below has to complete before terraform submits a v6 SKU on
+  # a scale set still carrying SCSI, which Azure rejects.
+  depends_on = [null_resource.nvme_disk_controller]
+
   name                = "${var.prefix}${var.name}"
   resource_group_name = var.resource_group_name
   location            = var.location
@@ -223,54 +227,72 @@ resource "azurerm_monitor_autoscale_setting" "client" {
 }
 
 # ---------------------------------------------------------------------------
-# Disk controller fixup for v6 SKUs.
+# v5 -> v6 disk controller transition.
 #
-# The v6 families boot only from NVMe, and azurerm has no diskControllerType on
-# azurerm_linux_virtual_machine_scale_set — it exists on azurerm_linux_virtual_machine
-# but not on either scale set resource, as of provider 4.81. So terraform creates
-# the scale set with the default SCSI and Azure rejects the v6 size.
+# The v6 families boot only from NVMe. Creating a v6 pool from scratch is fine —
+# Azure picks NVMe on its own once the image declares DiskControllerTypes, which
+# is verified. The problem is moving an existing pool: it already carries SCSI,
+# and azurerm has no diskControllerType on either scale set resource as of
+# provider 4.81 (azurerm_linux_virtual_machine has it; the scale sets do not).
+# terraform therefore submits a v6 SKU alongside the inherited SCSI and Azure
+# rejects the update.
 #
-# Setting it out of band is not a workaround around terraform so much as filling a
-# gap in it: the property is absent from the schema, so terraform never reads or
-# diffs it and a later plan stays clean (verified on dev — the pool disappeared
-# from the plan entirely once SKU and image matched).
+# Three properties constrain each other and have to move in one request: a v5
+# size cannot boot NVMe, a v6 size cannot boot SCSI, and the image must declare
+# support. So this does the whole transition itself, before terraform touches the
+# scale set — hence the depends_on above and the deliberate absence of any
+# reference to the scale set resource here, which would otherwise order it after.
 #
-# Three constraints have to be satisfied in one call: a v5 size cannot boot NVMe,
-# a v6 size cannot boot SCSI, and the image must declare DiskControllerTypes.
-# Changing the controller also requires the instances to be deallocated, hence the
-# stop/update/start below rather than a plain update-instances.
+# It is a no-op in every case except the one it exists for: a scale set that does
+# not exist yet (fresh create, which needs no help) or one already on NVMe.
+#
+# Not a workaround around terraform: the property is absent from the schema, so
+# terraform neither reads nor diffs it, and once SKU and image agree the pool
+# drops out of the plan entirely. Replace this with the native attribute when
+# azurerm grows one.
 locals {
   needs_nvme = can(regex("_v6$", var.machine_type))
+  pool_name  = "${var.prefix}${var.name}"
 }
 
 resource "null_resource" "nvme_disk_controller" {
   count = local.needs_nvme && var.subscription_id != "" ? 1 : 0
 
   triggers = {
-    scale_set = azurerm_linux_virtual_machine_scale_set.client.id
-    sku       = var.machine_type
-    image     = var.image_id
+    pool  = local.pool_name
+    sku   = var.machine_type
+    image = var.image_id
   }
 
   provisioner "local-exec" {
     command = <<-EOT
       set -euo pipefail
       RG="${var.resource_group_name}"
-      NAME="${azurerm_linux_virtual_machine_scale_set.client.name}"
+      NAME="${local.pool_name}"
       SUB="${var.subscription_id}"
+      SKU="${var.machine_type}"
+      IMG="${var.image_id}"
 
-      CURRENT=$(az vmss show -g "$RG" -n "$NAME" --subscription "$SUB" \
-        --query "virtualMachineProfile.storageProfile.diskControllerType" -o tsv)
-      if [ "$CURRENT" = "NVMe" ]; then
-        echo "$NAME already on NVMe"; exit 0
+      if ! az vmss show -g "$RG" -n "$NAME" --subscription "$SUB" -o none 2>/dev/null; then
+        echo "$NAME does not exist yet; a fresh v6 create picks NVMe on its own"
+        exit 0
       fi
 
-      echo "$NAME: switching disk controller to NVMe"
-      az vmss update -g "$RG" -n "$NAME" --subscription "$SUB" \
-        --set virtualMachineProfile.storageProfile.diskControllerType=NVMe -o none
+      CURRENT=$(az vmss show -g "$RG" -n "$NAME" --subscription "$SUB"         --query "virtualMachineProfile.storageProfile.diskControllerType" -o tsv)
+      if [ "$CURRENT" = "NVMe" ]; then
+        echo "$NAME already on NVMe"
+        exit 0
+      fi
 
-      # Instances keep the old model until told otherwise, and the controller
-      # cannot change on a running VM.
+      echo "$NAME: $CURRENT -> NVMe, moving SKU and image in the same request"
+      SET_ARGS="sku.name=$SKU virtualMachineProfile.storageProfile.diskControllerType=NVMe"
+      if [ -n "$IMG" ]; then
+        SET_ARGS="$SET_ARGS virtualMachineProfile.storageProfile.imageReference.id=$IMG"
+      fi
+      az vmss update -g "$RG" -n "$NAME" --subscription "$SUB" --set $SET_ARGS -o none
+
+      # The controller cannot change on a running VM, and Manual-mode instances
+      # keep the old model until told otherwise.
       az vmss deallocate -g "$RG" -n "$NAME" --subscription "$SUB" -o none
       az vmss update-instances -g "$RG" -n "$NAME" --instance-ids '*' --subscription "$SUB" -o none
       az vmss start -g "$RG" -n "$NAME" --subscription "$SUB" -o none
