@@ -444,3 +444,31 @@ variable "slots_publisher_interval_seconds" {
   type    = number
   default = 60
 }
+
+variable "slots_publisher_reclaim_enabled" {
+  description = <<-EOT
+    Let the publisher hand drained nodes to autoscale for removal. With this
+    off every instance stays protected from scale-in, so the pool can grow but
+    never shrink — which is the safe default, and what upstream GCP does.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "slots_publisher_reclaim_below_pct" {
+  description = "Only consider shedding a node while average pool utilisation is under this."
+  type        = number
+  default     = 30
+}
+
+variable "slots_publisher_reclaim_min_nodes" {
+  description = "Never drain below this many client nodes, regardless of how idle the pool is."
+  type        = number
+  default     = 1
+}
+
+variable "slots_publisher_scale_out_pct" {
+  description = "The scale-out threshold, so the publisher can refuse to shed a node that would immediately be scaled back out."
+  type        = number
+  default     = 70
+}

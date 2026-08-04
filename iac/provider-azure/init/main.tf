@@ -83,3 +83,36 @@ resource "azurerm_role_assignment" "instances_metrics_publisher" {
   principal_id         = azurerm_user_assigned_identity.infra_instances.principal_id
 }
 
+# Scale-in has to be told which nodes it may take. slots-metrics-publisher keeps
+# every client instance flagged protectFromScaleIn and clears the flag only on a
+# node it has already drained, so autoscale can never remove one that is still
+# running sandboxes. Verified on dev: with instance 2 protected, autoscale took
+# 1 and then 0 instead, even though its default policy removes the highest
+# instance ID first.
+#
+# Setting that flag is a write against the scale set's VM instances. The
+# built-in role carrying it is Virtual Machine Contributor, which also grants
+# delete — far more than a metrics publisher should hold. This custom role is
+# the two actions and nothing else.
+resource "azurerm_role_definition" "vmss_instance_protection" {
+  name        = "${var.prefix}vmss-instance-protection"
+  scope       = data.azurerm_resource_group.this.id
+  description = "Read scale set instances and set their scale-in protection flag. No create, no delete."
+
+  permissions {
+    actions = [
+      "Microsoft.Compute/virtualMachineScaleSets/virtualMachines/read",
+      "Microsoft.Compute/virtualMachineScaleSets/virtualMachines/write",
+    ]
+    not_actions = []
+  }
+
+  assignable_scopes = [data.azurerm_resource_group.this.id]
+}
+
+resource "azurerm_role_assignment" "instances_vmss_protection" {
+  scope              = data.azurerm_resource_group.this.id
+  role_definition_id = azurerm_role_definition.vmss_instance_protection.role_definition_resource_id
+  principal_id       = azurerm_user_assigned_identity.infra_instances.principal_id
+}
+

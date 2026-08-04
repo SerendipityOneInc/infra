@@ -480,7 +480,36 @@ variable "client_scale_out_slots_used_percentage" {
 variable "client_scale_in_cpu_threshold" {
   type        = number
   default     = 25
-  description = "orch-client autoscale: scale in below this avg CPU. null for GCP-style scale-out-only (scale-in reimages nodes without draining sandboxes)."
+  description = <<-EOT
+    orch-client autoscale: the Decrease rule's CPU threshold. This rule does not
+    decide anything on its own — it only makes Azure willing to remove an
+    instance. Which instance, and whether removing one is safe at all, is
+    decided by slots-metrics-publisher through scale-in protection. Set to null
+    to disable removal entirely.
+  EOT
+}
+
+variable "client_reclaim_enabled" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Allow the pool to shrink. The publisher drains the emptiest node, waits for
+    it to empty, then clears its scale-in protection so autoscale removes that
+    node and no other. Off by default: with it off every instance stays
+    protected and the pool only grows, matching upstream GCP's ONLY_SCALE_OUT.
+  EOT
+}
+
+variable "client_reclaim_below_pct" {
+  type        = number
+  default     = 30
+  description = "Only shed a node while average pool utilisation is under this. Shedding also requires the post-removal projection to stay under the scale-out threshold, so the pool cannot shed itself into an immediate scale-out."
+}
+
+variable "client_reclaim_min_nodes" {
+  type        = number
+  default     = null
+  description = "Floor on client nodes when reclaiming. null uses client_cluster_size."
 }
 
 variable "dashboard_api_count" {
