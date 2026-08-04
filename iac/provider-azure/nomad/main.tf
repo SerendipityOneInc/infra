@@ -177,6 +177,26 @@ module "template_manager_autoscaler" {
   apm_plugin_artifact_source = local.apm_plugin_artifact_source
 }
 
+# Publishes per-node sandbox slot utilisation to Azure Monitor as a custom
+# metric, which is what the client pool's autoscale rule scales on. Azure's
+# platform metrics cannot see either binding limit: the per-node sandbox count
+# cap is a count, and sandbox memory comes out of a hugepage pool that is
+# preallocated at boot (so consuming it never moves Available Memory Bytes).
+resource "nomad_job" "slots_metrics_publisher" {
+  count = var.slots_publisher_enabled ? 1 : 0
+
+  jobspec = templatefile("${path.module}/jobs/slots-metrics-publisher.hcl", {
+    node_pool              = var.api_node_pool
+    api_url                = var.slots_publisher_api_url
+    admin_token            = var.slots_publisher_admin_token
+    vmss_resource_id       = var.slots_publisher_vmss_resource_id
+    region                 = var.slots_publisher_region
+    node_prefix            = var.slots_publisher_node_prefix
+    max_sandboxes_per_node = var.slots_publisher_max_sandboxes_per_node
+    interval_seconds       = var.slots_publisher_interval_seconds
+  })
+}
+
 module "redis" {
   source = "../../modules/job-redis"
   count  = var.redis_managed ? 0 : 1

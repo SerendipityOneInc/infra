@@ -276,6 +276,18 @@ variable "client_scale_in_memory_free_bytes" {
   default = null
 }
 
+variable "client_scale_out_slots_used_percentage" {
+  description = "Scale the client pool out when average sandbox slot utilisation exceeds this. null leaves the pool on platform metrics, which cannot see the limits that bind."
+  type        = number
+  default     = null
+}
+
+variable "client_scale_in_cpu_threshold" {
+  description = "Scale the client pool in below this average CPU. null gives GCP-style scale-out-only; scale-in reimages nodes without draining their sandboxes."
+  type        = number
+  default     = 25
+}
+
 
 variable "subscription_id" {
   type        = string

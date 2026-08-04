@@ -508,6 +508,9 @@ module "cluster" {
   client_scale_out_memory_free_bytes  = var.client_scale_out_memory_free_bytes
   client_scale_in_memory_free_bytes   = var.client_scale_in_memory_free_bytes
 
+  client_scale_out_slots_used_percentage = var.client_scale_out_slots_used_percentage
+  client_scale_in_cpu_threshold          = var.client_scale_in_cpu_threshold
+
   build_node_pool_name               = local.build_pool_name
   build_cluster_size                 = var.build_cluster_size
   build_machine_type                 = var.build_server_machine_type
@@ -660,5 +663,15 @@ module "nomad" {
   dashboard_api_count           = var.dashboard_api_count
   dashboard_api_repository_name = module.init.dashboard_api_repository_name
   dashboard_api_env_vars        = local.dashboard_api_env_vars
+
+  # Feeds the client pool's autoscale rule (see modules/nodepool-client). Reads
+  # /nodes over the internal domain so the poll never leaves the VNet.
+  slots_publisher_enabled                = var.client_max_instances != null && var.client_max_instances > var.client_cluster_size
+  slots_publisher_api_url                = "https://api.${local.internal_domain_name}"
+  slots_publisher_admin_token            = module.init.admin_token
+  slots_publisher_vmss_resource_id       = module.cluster.client_vmss_id
+  slots_publisher_region                 = var.location
+  slots_publisher_node_prefix            = module.cluster.client_vmss_name
+  slots_publisher_max_sandboxes_per_node = var.client_max_sandboxes_per_node
 }
 

@@ -156,23 +156,26 @@ resource "azurerm_monitor_autoscale_setting" "client" {
       }
     }
 
-    rule {
-      metric_trigger {
-        metric_name        = "Percentage CPU"
-        metric_resource_id = azurerm_linux_virtual_machine_scale_set.client.id
-        time_grain         = "PT1M"
-        statistic          = "Average"
-        time_window        = "PT5M"
-        time_aggregation   = "Average"
-        operator           = "LessThan"
-        threshold          = var.scale_in_cpu_threshold
-      }
+    dynamic "rule" {
+      for_each = var.scale_in_cpu_threshold != null ? [1] : []
+      content {
+        metric_trigger {
+          metric_name        = "Percentage CPU"
+          metric_resource_id = azurerm_linux_virtual_machine_scale_set.client.id
+          time_grain         = "PT1M"
+          statistic          = "Average"
+          time_window        = "PT5M"
+          time_aggregation   = "Average"
+          operator           = "LessThan"
+          threshold          = var.scale_in_cpu_threshold
+        }
 
-      scale_action {
-        direction = "Decrease"
-        type      = "ChangeCount"
-        value     = "1"
-        cooldown  = "PT10M"
+        scale_action {
+          direction = "Decrease"
+          type      = "ChangeCount"
+          value     = "1"
+          cooldown  = "PT10M"
+        }
       }
     }
 
@@ -218,6 +221,48 @@ resource "azurerm_monitor_autoscale_setting" "client" {
           type      = "ChangeCount"
           value     = "1"
           cooldown  = "PT10M"
+        }
+      }
+    }
+
+    # The rule that actually fires. Percentage CPU and Available Memory Bytes
+    # cannot observe either limit that binds on a client node:
+    #
+    #   * max-sandboxes-per-node is a count. No host metric moves with it.
+    #   * Sandbox memory is served from a hugepage pool preallocated at boot, so
+    #     handing pages to sandboxes never changes Available Memory Bytes. A node
+    #     can be at its memory ceiling while reporting ~half its RAM free.
+    #   * CPU is oversubscribed and sandboxes are mostly idle, so utilisation
+    #     sits near single digits at full occupancy.
+    #
+    # Measured: a node saturated at 200 sandboxes sat at 3.6% average CPU with
+    # 117 GiB "available", and the pool never scaled while placement failed.
+    #
+    # slots-metrics-publisher (see nomad/jobs) computes utilisation against both
+    # limits and publishes the higher of the two here. Threshold is deliberately
+    # well under 100: a scale-out takes minutes (evaluation window, cooldown, VM
+    # boot) while a sandbox create takes ~1s, so waiting for saturation means
+    # rejecting work for the whole gap.
+    dynamic "rule" {
+      for_each = var.scale_out_slots_used_percentage != null ? [1] : []
+      content {
+        metric_trigger {
+          metric_name        = "SlotsUsedPct"
+          metric_namespace   = "e2b"
+          metric_resource_id = azurerm_linux_virtual_machine_scale_set.client.id
+          time_grain         = "PT1M"
+          statistic          = "Average"
+          time_window        = "PT5M"
+          time_aggregation   = "Average"
+          operator           = "GreaterThan"
+          threshold          = var.scale_out_slots_used_percentage
+        }
+
+        scale_action {
+          direction = "Increase"
+          type      = "ChangeCount"
+          value     = "1"
+          cooldown  = "PT5M"
         }
       }
     }

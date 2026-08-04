@@ -250,6 +250,9 @@ module "client" {
   scale_out_memory_free_bytes = var.client_scale_out_memory_free_bytes
   scale_in_memory_free_bytes  = var.client_scale_in_memory_free_bytes
 
+  scale_out_slots_used_percentage = var.client_scale_out_slots_used_percentage
+  scale_in_cpu_threshold          = var.client_scale_in_cpu_threshold
+
   admin_username = var.admin_username
   admin_password = random_password.vm_admin.result
 

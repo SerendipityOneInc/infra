@@ -393,3 +393,54 @@ variable "grafana_pg_readonly_password" {
   default   = ""
   sensitive = true
 }
+
+# ---
+# Slot-utilisation publisher. Feeds the client pool's autoscale rule a metric
+# that reflects the limits which actually bind (sandbox count cap, hugepage
+# pool), neither of which any Azure platform metric can observe.
+# ---
+
+variable "slots_publisher_enabled" {
+  type    = bool
+  default = false
+}
+
+variable "slots_publisher_api_url" {
+  description = "Base URL of the e2b API the publisher reads /nodes from. Use the internal domain so the poll stays inside the VNet."
+  type        = string
+  default     = ""
+}
+
+variable "slots_publisher_admin_token" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "slots_publisher_vmss_resource_id" {
+  description = "Client scale set the custom metric is published against; autoscale reads the metric from this resource."
+  type        = string
+  default     = ""
+}
+
+variable "slots_publisher_region" {
+  type    = string
+  default = ""
+}
+
+variable "slots_publisher_node_prefix" {
+  description = "Only nodes whose Nomad ID starts with this are published (the client VMSS name)."
+  type        = string
+  default     = ""
+}
+
+variable "slots_publisher_max_sandboxes_per_node" {
+  description = "Must match the orchestrator's max-sandboxes-per-node feature flag; it is the denominator of the count half of the utilisation figure."
+  type        = number
+  default     = 200
+}
+
+variable "slots_publisher_interval_seconds" {
+  type    = number
+  default = 60
+}

@@ -278,6 +278,17 @@ variable "client_max_instances" {
   default     = null
 }
 
+variable "client_max_sandboxes_per_node" {
+  type        = number
+  description = <<-EOT
+    Sandboxes a single client node accepts before it refuses placement. Must
+    track the orchestrator's max-sandboxes-per-node feature flag (default 200):
+    it is the denominator of the count half of the published slot-utilisation
+    metric, so a mismatch silently mis-scales the pool.
+  EOT
+  default     = 200
+}
+
 variable "build_max_instances" {
   type        = number
   description = "Autoscale ceiling for the build pool. null keeps it fixed at build_cluster_size."
@@ -452,6 +463,24 @@ variable "client_scale_in_memory_free_bytes" {
   type        = number
   default     = null
   description = "orch-client autoscale: extra scale-in condition, avg available memory > bytes."
+}
+
+variable "client_scale_out_slots_used_percentage" {
+  type        = number
+  default     = null
+  description = <<-EOT
+    orch-client autoscale: scale out when average sandbox slot utilisation
+    exceeds this percentage. Utilisation is max(sandboxes/cap, allocated
+    memory/hugepage capacity), published by slots-metrics-publisher — the CPU
+    and available-memory rules cannot see either limit. Keep it well under 100:
+    a scale-out takes minutes, a sandbox create takes ~1s.
+  EOT
+}
+
+variable "client_scale_in_cpu_threshold" {
+  type        = number
+  default     = 25
+  description = "orch-client autoscale: scale in below this avg CPU. null for GCP-style scale-out-only (scale-in reimages nodes without draining sandboxes)."
 }
 
 variable "dashboard_api_count" {
