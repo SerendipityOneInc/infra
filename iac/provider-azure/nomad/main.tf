@@ -194,6 +194,10 @@ resource "nomad_job" "slots_metrics_publisher" {
     node_prefix            = var.slots_publisher_node_prefix
     max_sandboxes_per_node = var.slots_publisher_max_sandboxes_per_node
     interval_seconds       = var.slots_publisher_interval_seconds
+    reclaim_enabled        = var.slots_publisher_reclaim_enabled
+    reclaim_below_pct      = var.slots_publisher_reclaim_below_pct
+    reclaim_min_nodes      = var.slots_publisher_reclaim_min_nodes
+    scale_out_pct          = coalesce(var.slots_publisher_scale_out_pct, 70)
   })
 }
 

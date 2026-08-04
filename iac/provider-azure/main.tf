@@ -673,5 +673,13 @@ module "nomad" {
   slots_publisher_region                 = var.location
   slots_publisher_node_prefix            = module.cluster.client_vmss_name
   slots_publisher_max_sandboxes_per_node = var.client_max_sandboxes_per_node
+
+  # Scale-in. The publisher keeps every instance protected and releases one only
+  # after draining it, so autoscale can never take a node that still has
+  # sandboxes on it.
+  slots_publisher_reclaim_enabled   = var.client_reclaim_enabled
+  slots_publisher_reclaim_below_pct = var.client_reclaim_below_pct
+  slots_publisher_reclaim_min_nodes = coalesce(var.client_reclaim_min_nodes, var.client_cluster_size)
+  slots_publisher_scale_out_pct     = var.client_scale_out_slots_used_percentage
 }
 
