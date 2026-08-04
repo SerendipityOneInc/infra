@@ -66,3 +66,20 @@ resource "azurerm_role_assignment" "instances_reader" {
   principal_id         = azurerm_user_assigned_identity.infra_instances.principal_id
 }
 
+# Client nodes publish a custom "sandbox slots used" metric to Azure Monitor
+# against their own VMSS resource, so autoscale can react to real placement
+# pressure. The platform metrics autoscale ships with (Percentage CPU,
+# Available Memory Bytes) cannot see either of the limits that actually bind:
+# the per-node sandbox count cap, and the preallocated hugepage pool that
+# sandbox memory is carved out of (allocating from it never moves
+# MemAvailable).
+#
+# Publishing custom metrics requires Microsoft.Insights/Metrics/write, which
+# neither Owner nor Contributor grants — only Monitoring Metrics Publisher
+# does. Scoped to the resource group, which is dedicated to this e2b stack.
+resource "azurerm_role_assignment" "instances_metrics_publisher" {
+  scope                = data.azurerm_resource_group.this.id
+  role_definition_name = "Monitoring Metrics Publisher"
+  principal_id         = azurerm_user_assigned_identity.infra_instances.principal_id
+}
+

@@ -173,8 +173,28 @@ variable "scale_out_cpu_threshold" {
 }
 
 variable "scale_in_cpu_threshold" {
-  type    = number
-  default = 25
+  description = <<-EOT
+    Scale in when average CPU falls below this. Set to null for GCP-style
+    scale-out-only, which is what the reference deployment does
+    (google_compute_region_autoscaler runs with mode = ONLY_SCALE_OUT).
+    Scale-in reimages a node that may be running sandboxes, and nothing here
+    drains it first, so anything carrying real work wants null.
+  EOT
+  type        = number
+  default     = 25
+}
+
+variable "scale_out_slots_used_percentage" {
+  description = <<-EOT
+    Scale out when average sandbox slot utilisation across the pool exceeds
+    this. Utilisation is published by slots-metrics-publisher as
+    max(sandboxes/cap, allocated memory/hugepage capacity), which is the only
+    signal that tracks the limits a client node actually hits. null disables
+    the rule and leaves the pool on the platform-metric rules, which in practice
+    means it never scales.
+  EOT
+  type        = number
+  default     = null
 }
 
 variable "tags" {
