@@ -19,6 +19,16 @@ init:
 
 # Create the Compute Gallery and a Gen2 Linux image definition (idempotent).
 # Run once per environment before the first `make build`.
+#
+# The definition declares DiskControllerTypes because the v6 machine families
+# boot only from NVMe and refuse a SCSI-only image. That capability cannot be
+# added to an existing definition, so getting it wrong here means creating a
+# second definition and rebuilding — which is exactly what dev and staging had
+# to do (hence their e2b-orch alongside e2b-orch-nvme).
+#
+# The value must be one quoted KEY=VALUE with no space after the comma: --features
+# takes space-separated pairs, so "SCSI, NVMe" splits and the CLI rejects it.
+# Azure stores it back as "SCSI, NVMe" regardless.
 .PHONY: gallery
 gallery:
 	az sig create \
@@ -34,6 +44,7 @@ gallery:
 		--publisher e2b --offer orch --sku 22_04-lts-gen2 \
 		--os-type Linux --os-state Generalized \
 		--hyper-v-generation V2 \
+		--features "DiskControllerTypes=SCSI,NVMe" \
 		--location $(AZURE_LOCATION) --output none 2>/dev/null || true
 
 .PHONY: build

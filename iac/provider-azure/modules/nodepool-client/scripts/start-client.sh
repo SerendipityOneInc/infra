@@ -54,7 +54,29 @@ fi
 if [ "$${#CANDIDATES[@]}" -gt 1 ]; then
   echo "Creating RAID0 across $${#CANDIDATES[@]} local disks: $${CANDIDATES[*]}"
   DISK="/dev/md0"
-  until mdadm --create --verbose "$DISK" --level=0 --raid-devices="$${#CANDIDATES[@]}" "$${CANDIDATES[@]}"; do
+
+  # A reimage does not wipe the local NVMe disks, so an array created on a
+  # previous boot is still on them and the kernel auto-assembles it before this
+  # script runs. Its members are then held open and mdadm --create fails with
+  # EBUSY forever -- the retry loop below never converges, and the node silently
+  # never joins the cluster. Tear any stale array down first.
+  for MD in /dev/md/* /dev/md[0-9]*; do
+    [ -b "$MD" ] || continue
+    echo "stopping pre-existing array $MD"
+    mdadm --stop "$MD" || true
+  done
+  mdadm --zero-superblock "$${CANDIDATES[@]}" 2>/dev/null || true
+
+  # Bounded: an unbounded loop turns any persistent error into a hang with no
+  # signal. Ten seconds is ample for a transient udev settle.
+  for ATTEMPT in $(seq 1 10); do
+    if mdadm --create --verbose "$DISK" --level=0 --raid-devices="$${#CANDIDATES[@]}" "$${CANDIDATES[@]}"; then
+      break
+    fi
+    if [ "$ATTEMPT" -eq 10 ]; then
+      echo "ERROR: could not create $DISK across $${CANDIDATES[*]} after 10 attempts"
+      exit 1
+    fi
     echo "failed to create array, retrying ..."
     sleep 1
   done

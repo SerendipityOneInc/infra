@@ -89,7 +89,10 @@ init:
 	az storage account create --name $(TERRAFORM_STATE_STORAGE_ACCOUNT) --resource-group $(TERRAFORM_STATE_RESOURCE_GROUP) --location $(AZURE_LOCATION) --sku Standard_LRS --kind StorageV2 --subscription $(AZURE_SUBSCRIPTION_ID) --min-tls-version TLS1_2 --allow-blob-public-access false --output none 2>/dev/null || true
 	az storage container create --name $(TERRAFORM_STATE_CONTAINER) --account-name $(TERRAFORM_STATE_STORAGE_ACCOUNT) --auth-mode login --subscription $(AZURE_SUBSCRIPTION_ID) --output none 2>/dev/null || true
 	$(tf_vars) $(TF) init -input=false -upgrade -reconfigure $(backend_config)
-	$(tf_vars) $(TF) apply -target=module.init -input=false -compact-warnings
+	# -var-file is not optional here: variables like commit_sha have no default,
+	# so without it the very first apply of a new environment dies on "No value
+	# for required variable" after the backend has already been created.
+	$(tf_vars) $(TF) apply $(TF_VAR_FILE_ARG) -target=module.init -input=false -compact-warnings
 
 .PHONY: plan
 plan:
