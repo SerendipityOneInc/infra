@@ -75,6 +75,15 @@ resource "azurerm_resource_group" "main" {
 module "init" {
   source = "./init"
 
+  # The module reads the resource group back through a data source to scope its
+  # role assignments. Passing the name is not enough to order that read after
+  # the group exists: the name resolves to var.resource_group_name, which is
+  # known at plan time, so terraform reads the data source immediately and a
+  # brand-new environment fails with "Resource Group ... was not found". A
+  # module-level depends_on is what defers data sources until the dependency is
+  # applied.
+  depends_on = [azurerm_resource_group.main]
+
   prefix              = var.prefix
   resource_group_name = azurerm_resource_group.main.name
   location            = var.location
@@ -94,6 +103,18 @@ module "init" {
 
 module "network" {
   source = "./modules/network"
+
+  # The Application Gateway in here mounts its TLS certificates straight out of
+  # Key Vault, addressed by URL. A URL is just a string, so terraform sees no
+  # dependency on the acmebot issuance that puts the certificates there and
+  # schedules the two in parallel. On a new environment the gateway loses that
+  # race and Azure fails it with ApplicationGatewayKeyVaultSecretNotFound —
+  # leaving a Failed/Stopped gateway that is not in state and has to be deleted
+  # by hand before the next apply.
+  #
+  # Ordering it after the issuance is what makes a first apply work unattended,
+  # instead of relying on whoever runs it to remember to -target the issuance.
+  depends_on = [null_resource.acmebot_first_issuance]
 
   prefix              = var.prefix
   resource_group_name = azurerm_resource_group.main.name
