@@ -95,7 +95,11 @@ resource "azurerm_role_assignment" "instances_metrics_publisher" {
 # delete — far more than a metrics publisher should hold. This custom role is
 # the two actions and nothing else.
 resource "azurerm_role_definition" "vmss_instance_protection" {
-  name        = "${var.prefix}vmss-instance-protection"
+  # Custom role names are unique per AAD directory, not per subscription or
+  # resource group, so the environment has to be in the name. Without it the
+  # second environment to deploy fails with RoleDefinitionWithSameNameExists
+  # even though the two roles are scoped to different subscriptions.
+  name        = "${var.prefix}vmss-instance-protection-${var.resource_group_name}"
   scope       = data.azurerm_resource_group.this.id
   description = "Read scale set instances and set their scale-in protection flag. No create, no delete."
 
