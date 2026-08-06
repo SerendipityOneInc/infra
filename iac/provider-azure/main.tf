@@ -310,7 +310,35 @@ locals {
 }
 
 locals {
-  redis_port            = 6379
+  redis_port = 6379
+
+  # Where every service points its Redis client.
+  #
+  # redis_managed = false: the in-cluster `redis` Nomad job, registered in Consul.
+  # redis_managed = true:  an external Redis at redis_external_url, and the Nomad
+  #                        job is not scheduled.
+  #
+  # Note this variable defaults to true, and until now that default silently
+  # produced a broken deployment: it removed the only Redis while leaving every
+  # service pointed at redis.service.consul. The precondition below turns that
+  # into a plan-time error instead of a fatal at service start.
+  redis_addr = var.redis_managed ? var.redis_external_url : "redis.service.consul:${local.redis_port}"
+}
+
+# Fails the plan when redis_managed is on but no address was given. Without this
+# the deployment still applies cleanly and only breaks at runtime: the redis job
+# is skipped, REDIS_URL is set to "", and every service fatals with
+# "redis is disabled". The variable defaults to true, so this is easy to hit.
+resource "terraform_data" "redis_config_check" {
+  lifecycle {
+    precondition {
+      condition     = !var.redis_managed || var.redis_external_url != ""
+      error_message = "redis_managed = true requires redis_external_url (host:port of the external Redis). Set redis_managed = false to run the in-cluster Nomad redis job instead."
+    }
+  }
+}
+
+locals {
   ingress_port          = 8080
   juicefs_volume_type   = "juicefs"
   juicefs_mount_path    = "/mnt/persistent-volume-types/juicefs"
@@ -360,11 +388,9 @@ locals {
     LOKI_URL                     = "http://loki.service.consul:${local.loki_port}"
     CLICKHOUSE_CONNECTION_STRING = local.clickhouse_connection_string
 
-    # Redis is deployed as the in-cluster `redis` Nomad job (registered in Consul
-    # as redis.service.consul). The api requires it; without REDIS_URL the api
-    # treats redis as disabled and fatals ("redis is disabled"). Mirrors the GCP
-    # api_env_vars (self-hosted single-node redis, no managed cluster URL).
-    REDIS_URL       = "redis.service.consul:${local.redis_port}"
+    # The api requires Redis; without REDIS_URL it treats redis as disabled and
+    # fatals ("redis is disabled"). See local.redis_addr for which Redis this is.
+    REDIS_URL       = local.redis_addr
     REDIS_POOL_SIZE = "40"
 
     LOGS_COLLECTOR_ADDRESS       = "http://localhost:${local.logs_proxy_port}"
@@ -393,8 +419,8 @@ locals {
     API_INTERNAL_GRPC_ADDRESS = "api-internal-grpc.service.consul:${var.api_internal_grpc_port}"
     LAUNCH_DARKLY_API_KEY     = module.init.launch_darkly_api_key
     # client-proxy also requires Redis; without REDIS_URL it fatals with
-    # "redis is disabled". Point at the in-cluster redis Nomad job.
-    REDIS_URL       = "redis.service.consul:${local.redis_port}"
+    # "redis is disabled".
+    REDIS_URL       = local.redis_addr
     REDIS_POOL_SIZE = "40"
   }, var.client_proxy_env_vars)
 
@@ -576,7 +602,7 @@ locals {
     # so the embedded JSON's quotes must be pre-escaped.
     AUTH_PROVIDER_CONFIG = replace(jsonencode({ jwt = [] }), "\"", "\\\"")
 
-    REDIS_URL = "redis.service.consul:${local.redis_port}"
+    REDIS_URL = local.redis_addr
 
     ORY_SDK_URL           = "https://ory-placeholder.invalid"
     ORY_PROJECT_API_TOKEN = "unused-platform-managed-mode"
