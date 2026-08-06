@@ -119,8 +119,23 @@ variable "image_tag" {
 
 variable "redis_managed" {
   type        = bool
-  description = "When true, use a managed Redis (Azure Cache) and do not schedule the in-cluster redis Nomad job."
+  description = "When true, point every service at redis_external_url and do not schedule the in-cluster redis Nomad job."
   default     = true
+}
+
+variable "redis_external_url" {
+  type        = string
+  description = <<-EOT
+    host:port of an external Redis, used when redis_managed = true.
+
+    A bare address, no scheme and no credentials: the e2b Redis client builds
+    redis.Options{Addr: ...} and never sets Username/Password/TLSConfig, so a
+    Redis that demands AUTH or TLS cannot be reached without a code change.
+    That rules out Azure Managed Redis as-is (it forces both) and is why the
+    self-hosted deployment runs with auth disabled inside the VNet — the same
+    posture as the in-cluster Nomad job it replaces.
+  EOT
+  default     = ""
 }
 
 variable "traefik_config_files" {
