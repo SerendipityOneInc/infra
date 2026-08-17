@@ -34,6 +34,10 @@ jobs:
             flag: unit-api
             test_path: ./...
             sudo: false
+          - package: packages/billing
+            flag: unit-billing
+            test_path: ./...
+            sudo: false
           - package: packages/client-proxy
             flag: unit-client-proxy
             test_path: ./...

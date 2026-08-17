@@ -69,6 +69,22 @@ func TestEventsRejectsMissingAuth(t *testing.T) {
 	}
 }
 
+func TestEventsAcceptsPreviousToken(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	svc := newTestServer(&fakeStore{}, now)
+	svc.previousToken = "previous-token-012345678901234567"
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/internal/v1/sandbox-events?from=2026-08-17T10:00:00Z&until=2026-08-17T12:00:00Z", nil)
+	req.Header.Set("Authorization", "Bearer "+svc.previousToken)
+	res := httptest.NewRecorder()
+	svc.handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+}
+
 func TestUnauthorizedRequestsDoNotConsumeAuthenticatedRateLimit(t *testing.T) {
 	t.Parallel()
 
