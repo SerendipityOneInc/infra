@@ -622,7 +622,7 @@ locals {
     # per-team (tiers.events_ttl_days, applied as a per-row TTL), so this has to
     # track the longest retention any team is on — accepting a wider window
     # returns a silently incomplete answer rather than an error.
-    MAX_QUERY_RANGE = "${var.billing_max_query_range_days * 24}h"
+    MAX_QUERY_RANGE = "${var.billing_gateway_max_query_range_days * 24}h"
   }
 }
 

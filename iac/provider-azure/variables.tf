@@ -555,7 +555,7 @@ variable "billing_gateway_previous_token" {
   }
 }
 
-variable "billing_max_query_range_days" {
+variable "billing_gateway_max_query_range_days" {
   type        = number
   description = <<-EOT
     Widest time window the billing gateway will accept, in days.
