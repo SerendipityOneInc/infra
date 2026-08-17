@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,16 +15,20 @@ import (
 )
 
 type fakeStore struct {
-	events []rawEvent
-	err    error
+	events        []rawEvent
+	err           error
+	lastQuery     pageQuery
+	missingCount  uint64
+	missingOldest *time.Time
 }
 
-func (f *fakeStore) QueryTerminalEvents(context.Context, pageQuery) ([]rawEvent, error) {
+func (f *fakeStore) QueryTerminalEvents(_ context.Context, query pageQuery) ([]rawEvent, error) {
+	f.lastQuery = query
 	return f.events, f.err
 }
 func (f *fakeStore) Ping(context.Context) error { return f.err }
 func (f *fakeStore) QueryMissingTerminal(context.Context, time.Duration) (uint64, *time.Time, error) {
-	return 0, nil, f.err
+	return f.missingCount, f.missingOldest, f.err
 }
 func (f *fakeStore) Close() error { return nil }
 
@@ -148,6 +154,45 @@ func TestCursorPairRequired(t *testing.T) {
 	}
 }
 
+func TestEventsReturnsCompositeCursorForSameTimestamp(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	timestamp := now.Add(-time.Hour)
+	ids := []uuid.UUID{
+		uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+		uuid.MustParse("00000000-0000-0000-0000-000000000002"),
+		uuid.MustParse("00000000-0000-0000-0000-000000000003"),
+	}
+	store := &fakeStore{events: []rawEvent{
+		{ID: ids[0], Type: "sandbox.lifecycle.paused", Timestamp: timestamp, SandboxTeamID: uuid.New()},
+		{ID: ids[1], Type: "sandbox.lifecycle.paused", Timestamp: timestamp, SandboxTeamID: uuid.New()},
+		{ID: ids[2], Type: "sandbox.lifecycle.paused", Timestamp: timestamp, SandboxTeamID: uuid.New()},
+	}}
+	svc := newTestServer(store, now)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/internal/v1/sandbox-events?from=2026-08-17T10:00:00Z&until=2026-08-17T12:00:00Z&limit=2", nil)
+	req.Header.Set("Authorization", "Bearer "+svc.currentToken)
+	res := httptest.NewRecorder()
+	svc.handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var page pageResponse
+	if err := json.NewDecoder(res.Body).Decode(&page); err != nil {
+		t.Fatalf("decode page: %v", err)
+	}
+	if len(page.Events) != 2 || page.NextCursor == nil {
+		t.Fatalf("unexpected page: %#v", page)
+	}
+	if page.NextCursor.ID != ids[1].String() || page.NextCursor.Timestamp != timestamp.Format(time.RFC3339Nano) {
+		t.Fatalf("unexpected cursor: %#v", page.NextCursor)
+	}
+	if store.lastQuery.limit != 2 {
+		t.Fatalf("query limit = %d", store.lastQuery.limit)
+	}
+}
+
 func TestLoadConfigRejectsShortPreviousToken(t *testing.T) {
 	t.Setenv("CLICKHOUSE_CONNECTION_STRING", "clickhouse://reader:secret@clickhouse.invalid/default")
 	t.Setenv("BILLING_GATEWAY_TOKEN", "01234567890123456789012345678901")
@@ -195,5 +240,23 @@ func TestParsePageQueryHonoursConfiguredMaxRange(t *testing.T) {
 	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
 	if _, err := parsePageQuery(req, now, 60*24*time.Hour); err != nil {
 		t.Fatalf("expected a 30-day window to be accepted under a 60-day range: %v", err)
+	}
+}
+
+func TestMissingTerminalLoggerEmitsAggregateOnly(t *testing.T) {
+	t.Parallel()
+
+	oldest := time.Now().UTC().Add(-25 * time.Hour)
+	store := &fakeStore{missingCount: 2, missingOldest: &oldest}
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	runMissingTerminalLogger(ctx, store, time.Second, defaultMaxRange, logger)
+
+	log := output.String()
+	if !contains(log, `"msg":"sandbox_billing_terminal_missing"`) || !contains(log, `"missing_count":2`) {
+		t.Fatalf("unexpected log: %s", log)
 	}
 }

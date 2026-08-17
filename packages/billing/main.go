@@ -534,7 +534,7 @@ func runMissingTerminalLogger(ctx context.Context, store eventStore, timeout, lo
 		if oldest != nil {
 			attrs = append(attrs, "oldest_started_at", oldest.Format(time.RFC3339Nano), "oldest_age_seconds", int64(time.Since(*oldest).Seconds()))
 		}
-		logger.Warn("billing_terminal_missing", attrs...)
+		logger.Warn("sandbox_billing_terminal_missing", attrs...)
 	}
 	check()
 	for {
