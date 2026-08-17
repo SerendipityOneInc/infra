@@ -44,12 +44,15 @@ WHERE type IN ('sandbox.lifecycle.paused', 'sandbox.lifecycle.killed')
 ORDER BY timestamp ASC, id ASC
 LIMIT ?`
 
+	// The lookback is the retention window, not a fixed 7 days: with a longer
+	// retention an execution that started 10 days ago and never terminated
+	// would otherwise never be reported.
 	missingTerminalQuery = `SELECT count(), min(started_at)
 FROM (
   SELECT sandbox_execution_id, min(timestamp) AS started_at
   FROM sandbox_events
   WHERE type IN ('sandbox.lifecycle.created', 'sandbox.lifecycle.resumed')
-    AND timestamp >= now() - INTERVAL 7 DAY
+    AND timestamp >= now() - INTERVAL ? SECOND
     AND timestamp < now() - INTERVAL 24 HOUR
     AND sandbox_execution_id != ''
   GROUP BY sandbox_execution_id
@@ -58,13 +61,19 @@ LEFT ANTI JOIN (
   SELECT DISTINCT sandbox_execution_id
   FROM sandbox_events
   WHERE type IN ('sandbox.lifecycle.paused', 'sandbox.lifecycle.killed')
-    AND timestamp >= now() - INTERVAL 7 DAY
+    AND timestamp >= now() - INTERVAL ? SECOND
     AND sandbox_execution_id != ''
 ) AS terminals USING sandbox_execution_id`
 
 	defaultLimit = 500
 	maxLimit     = 1000
-	maxRange     = 7 * 24 * time.Hour
+
+	// Fallback only. The real bound is how long sandbox_events actually keeps
+	// rows, which is per-team (tiers.events_ttl_days -> the events_ttl_days
+	// column, enforced as a per-row TTL). Accepting a window wider than the
+	// retention returns a silently short answer, so MAX_QUERY_RANGE must be
+	// kept in step with the longest retention any team is on.
+	defaultMaxRange = 7 * 24 * time.Hour
 )
 
 type config struct {
@@ -74,6 +83,7 @@ type config struct {
 	previousToken   string
 	queryTimeout    time.Duration
 	shutdownTimeout time.Duration
+	maxRange        time.Duration
 }
 
 func loadConfig() (config, error) {
@@ -85,6 +95,13 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
+	maxRange, err := envDuration("MAX_QUERY_RANGE", defaultMaxRange)
+	if err != nil {
+		return config{}, err
+	}
+	if maxRange <= 0 {
+		return config{}, errors.New("MAX_QUERY_RANGE must be positive")
+	}
 	port := strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
 		port = "8080"
@@ -92,19 +109,20 @@ func loadConfig() (config, error) {
 	cfg := config{
 		address:         ":" + port,
 		clickhouseDSN:   strings.TrimSpace(os.Getenv("CLICKHOUSE_CONNECTION_STRING")),
-		currentToken:    strings.TrimSpace(os.Getenv("SANDBOX_BILLING_GATEWAY_TOKEN")),
-		previousToken:   strings.TrimSpace(os.Getenv("SANDBOX_BILLING_GATEWAY_PREVIOUS_TOKEN")),
+		currentToken:    strings.TrimSpace(os.Getenv("BILLING_GATEWAY_TOKEN")),
+		previousToken:   strings.TrimSpace(os.Getenv("BILLING_GATEWAY_PREVIOUS_TOKEN")),
 		queryTimeout:    queryTimeout,
+		maxRange:        maxRange,
 		shutdownTimeout: shutdownTimeout,
 	}
 	if cfg.clickhouseDSN == "" {
 		return config{}, errors.New("CLICKHOUSE_CONNECTION_STRING is required")
 	}
 	if len(cfg.currentToken) < 32 {
-		return config{}, errors.New("SANDBOX_BILLING_GATEWAY_TOKEN must be at least 32 characters")
+		return config{}, errors.New("BILLING_GATEWAY_TOKEN must be at least 32 characters")
 	}
 	if cfg.previousToken != "" && len(cfg.previousToken) < 32 {
-		return config{}, errors.New("SANDBOX_BILLING_GATEWAY_PREVIOUS_TOKEN must be at least 32 characters when set")
+		return config{}, errors.New("BILLING_GATEWAY_PREVIOUS_TOKEN must be at least 32 characters when set")
 	}
 
 	return cfg, nil
@@ -140,7 +158,7 @@ type rawEvent struct {
 type eventStore interface {
 	QueryTerminalEvents(ctx context.Context, query pageQuery) ([]rawEvent, error)
 	Ping(ctx context.Context) error
-	QueryMissingTerminal(ctx context.Context) (uint64, *time.Time, error)
+	QueryMissingTerminal(ctx context.Context, lookback time.Duration) (uint64, *time.Time, error)
 	Close() error
 }
 
@@ -203,10 +221,11 @@ func (s *clickhouseStore) QueryTerminalEvents(ctx context.Context, q pageQuery) 
 func (s *clickhouseStore) Ping(ctx context.Context) error { return s.conn.Ping(ctx) }
 func (s *clickhouseStore) Close() error                   { return s.conn.Close() }
 
-func (s *clickhouseStore) QueryMissingTerminal(ctx context.Context) (uint64, *time.Time, error) {
+func (s *clickhouseStore) QueryMissingTerminal(ctx context.Context, lookback time.Duration) (uint64, *time.Time, error) {
 	var count uint64
 	var oldest sql.NullTime
-	if err := s.conn.QueryRow(ctx, missingTerminalQuery).Scan(&count, &oldest); err != nil {
+	seconds := int64(lookback / time.Second)
+	if err := s.conn.QueryRow(ctx, missingTerminalQuery, seconds, seconds).Scan(&count, &oldest); err != nil {
 		return 0, nil, errors.New("query missing terminal aggregate")
 	}
 	if !oldest.Valid {
@@ -262,6 +281,7 @@ type server struct {
 	currentToken  string
 	previousToken string
 	queryTimeout  time.Duration
+	maxRange      time.Duration
 	now           func() time.Time
 	logger        *slog.Logger
 	limiter       *requestLimiter
@@ -347,7 +367,7 @@ func (s *server) ready(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) events(w http.ResponseWriter, r *http.Request) {
-	q, err := parsePageQuery(r, s.now().UTC())
+	q, err := parsePageQuery(r, s.now().UTC(), s.maxRange)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request", "detail": err.Error()})
 
@@ -357,7 +377,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := s.store.QueryTerminalEvents(ctx, q)
 	if err != nil {
-		s.logger.Error("sandbox_billing_gateway_query_failed")
+		s.logger.Error("billing_gateway_query_failed")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "source_unavailable"})
 
 		return
@@ -371,7 +391,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	for _, item := range raw {
 		normalized := normalizeEvent(item)
 		if normalized.Execution == nil {
-			s.logger.Error("sandbox_billing_terminal_malformed", "event_id", item.ID.String(), "sandbox_id", item.SandboxID)
+			s.logger.Error("billing_terminal_malformed", "event_id", item.ID.String(), "sandbox_id", item.SandboxID)
 		}
 		events = append(events, normalized)
 	}
@@ -383,7 +403,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-func parsePageQuery(r *http.Request, now time.Time) (pageQuery, error) {
+func parsePageQuery(r *http.Request, now time.Time, maxRange time.Duration) (pageQuery, error) {
 	values := r.URL.Query()
 	from, err := time.Parse(time.RFC3339Nano, values.Get("from"))
 	if err != nil {
@@ -495,15 +515,15 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	}
 }
 
-func runMissingTerminalLogger(ctx context.Context, store eventStore, timeout time.Duration, logger *slog.Logger) {
+func runMissingTerminalLogger(ctx context.Context, store eventStore, timeout, lookback time.Duration, logger *slog.Logger) {
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
 	check := func() {
 		queryCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		count, oldest, err := store.QueryMissingTerminal(queryCtx)
+		count, oldest, err := store.QueryMissingTerminal(queryCtx, lookback)
 		if err != nil {
-			logger.Error("sandbox_billing_terminal_missing_check_failed")
+			logger.Error("billing_terminal_missing_check_failed")
 
 			return
 		}
@@ -514,7 +534,7 @@ func runMissingTerminalLogger(ctx context.Context, store eventStore, timeout tim
 		if oldest != nil {
 			attrs = append(attrs, "oldest_started_at", oldest.Format(time.RFC3339Nano), "oldest_age_seconds", int64(time.Since(*oldest).Seconds()))
 		}
-		logger.Warn("sandbox_billing_terminal_missing", attrs...)
+		logger.Warn("billing_terminal_missing", attrs...)
 	}
 	check()
 	for {
@@ -547,21 +567,21 @@ func run() int {
 	defer stop()
 	svc := &server{
 		store: store, currentToken: cfg.currentToken, previousToken: cfg.previousToken,
-		queryTimeout: cfg.queryTimeout, now: time.Now, logger: logger,
+		queryTimeout: cfg.queryTimeout, maxRange: cfg.maxRange, now: time.Now, logger: logger,
 		limiter: newRequestLimiter(10, 20, time.Now()),
 	}
 	httpServer := &http.Server{
 		Addr: cfg.address, Handler: svc.handler(), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second,
 	}
-	go runMissingTerminalLogger(ctx, store, cfg.queryTimeout, logger)
+	go runMissingTerminalLogger(ctx, store, cfg.queryTimeout, cfg.maxRange, logger)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.shutdownTimeout)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
-	logger.Info("sandbox_billing_read_gateway_started", "address", cfg.address)
+	logger.Info("billing_started", "address", cfg.address)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("http_server_failed", "error", err.Error())
 

@@ -14,9 +14,9 @@ locals {
     username                 = var.clickhouse_username
     password                 = var.clickhouse_password
     database                 = var.clickhouse_database
-    sandbox_billing_enabled  = var.sandbox_billing_enabled
-    sandbox_billing_username = var.sandbox_billing_username
-    sandbox_billing_password = var.sandbox_billing_password
+    billing_enabled  = var.billing_enabled
+    billing_username = var.billing_username
+    billing_password = var.billing_password
   })
 
   otel_agent_config = templatefile("${path.module}/configs/otel-agent.yaml", {

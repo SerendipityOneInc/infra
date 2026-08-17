@@ -65,7 +65,7 @@ resource "random_password" "clickhouse_server_secret" {
   special = false
 }
 
-resource "random_password" "sandbox_billing_clickhouse_password" {
+resource "random_password" "billing_clickhouse_password" {
   length  = 32
   special = false
 }
@@ -77,8 +77,8 @@ resource "azurerm_key_vault_secret" "clickhouse" {
     CLICKHOUSE_USERNAME      = "e2b",
     CLICKHOUSE_PASSWORD      = random_password.clickhouse_password.result,
     SERVER_SECRET            = random_password.clickhouse_server_secret.result,
-    SANDBOX_BILLING_USERNAME = "sandbox_billing_reader",
-    SANDBOX_BILLING_PASSWORD = random_password.sandbox_billing_clickhouse_password.result,
+    BILLING_USERNAME = "billing_reader",
+    BILLING_PASSWORD = random_password.billing_clickhouse_password.result,
   })
 
   depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
@@ -89,16 +89,16 @@ resource "azurerm_key_vault_secret" "clickhouse" {
 }
 
 # Shared by the public read gateway and the GKE pull worker. Rotation accepts
-# the old token through SANDBOX_BILLING_GATEWAY_PREVIOUS_TOKEN during rollout.
-resource "random_password" "sandbox_billing_gateway_token" {
+# the old token through BILLING_GATEWAY_PREVIOUS_TOKEN during rollout.
+resource "random_password" "billing_gateway_token" {
   length  = 43
   special = false
 }
 
-resource "azurerm_key_vault_secret" "sandbox_billing_gateway_token" {
-  name         = "${var.prefix}sandbox-billing-gateway-token"
+resource "azurerm_key_vault_secret" "billing_gateway_token" {
+  name         = "${var.prefix}billing-gateway-token"
   key_vault_id = azurerm_key_vault.main.id
-  value        = random_password.sandbox_billing_gateway_token.result
+  value        = random_password.billing_gateway_token.result
 
   depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
 
@@ -109,11 +109,11 @@ resource "azurerm_key_vault_secret" "sandbox_billing_gateway_token" {
 
 # Read the effective vault value back so both the Nomad job and the GKE secret
 # handoff consume the same source of truth, including an out-of-band rotation.
-data "azurerm_key_vault_secret" "sandbox_billing_gateway_token" {
-  name         = azurerm_key_vault_secret.sandbox_billing_gateway_token.name
+data "azurerm_key_vault_secret" "billing_gateway_token" {
+  name         = azurerm_key_vault_secret.billing_gateway_token.name
   key_vault_id = azurerm_key_vault.main.id
 
-  depends_on = [azurerm_key_vault_secret.sandbox_billing_gateway_token]
+  depends_on = [azurerm_key_vault_secret.billing_gateway_token]
 }
 
 # ---

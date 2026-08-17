@@ -21,13 +21,13 @@ func (f *fakeStore) QueryTerminalEvents(context.Context, pageQuery) ([]rawEvent,
 	return f.events, f.err
 }
 func (f *fakeStore) Ping(context.Context) error { return f.err }
-func (f *fakeStore) QueryMissingTerminal(context.Context) (uint64, *time.Time, error) {
+func (f *fakeStore) QueryMissingTerminal(context.Context, time.Duration) (uint64, *time.Time, error) {
 	return 0, nil, f.err
 }
 func (f *fakeStore) Close() error { return nil }
 
 func newTestServer(store eventStore, now time.Time) *server {
-	return &server{store: store, currentToken: "01234567890123456789012345678901", queryTimeout: time.Second, now: func() time.Time { return now }, logger: slog.New(slog.DiscardHandler), limiter: newRequestLimiter(10, 20, now)}
+	return &server{store: store, currentToken: "01234567890123456789012345678901", queryTimeout: time.Second, maxRange: defaultMaxRange, now: func() time.Time { return now }, logger: slog.New(slog.DiscardHandler), limiter: newRequestLimiter(10, 20, now)}
 }
 
 func TestEventsAuthenticatesAndNormalizes(t *testing.T) {
@@ -126,7 +126,7 @@ func TestCursorPairRequired(t *testing.T) {
 
 	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/internal/v1/sandbox-events?from=2026-08-17T10:00:00Z&until=2026-08-17T12:00:00Z&after_id="+uuid.NewString(), nil)
-	_, err := parsePageQuery(req, now)
+	_, err := parsePageQuery(req, now, defaultMaxRange)
 	if err == nil {
 		t.Fatal("expected cursor validation error")
 	}
@@ -134,8 +134,8 @@ func TestCursorPairRequired(t *testing.T) {
 
 func TestLoadConfigRejectsShortPreviousToken(t *testing.T) {
 	t.Setenv("CLICKHOUSE_CONNECTION_STRING", "clickhouse://reader:secret@clickhouse.invalid/default")
-	t.Setenv("SANDBOX_BILLING_GATEWAY_TOKEN", "01234567890123456789012345678901")
-	t.Setenv("SANDBOX_BILLING_GATEWAY_PREVIOUS_TOKEN", "short")
+	t.Setenv("BILLING_GATEWAY_TOKEN", "01234567890123456789012345678901")
+	t.Setenv("BILLING_GATEWAY_PREVIOUS_TOKEN", "short")
 	if _, err := loadConfig(); err == nil || !contains(err.Error(), "PREVIOUS_TOKEN") {
 		t.Fatalf("expected previous-token validation error, got %v", err)
 	}
@@ -162,4 +162,22 @@ func contains(value, substring string) bool {
 	}
 
 	return false
+}
+
+func TestParsePageQueryHonoursConfiguredMaxRange(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	// 30 days, wider than the 7-day fallback but inside a 60-day retention.
+	target := "/internal/v1/sandbox-events?from=2026-07-18T12:00:00Z&until=2026-08-17T12:00:00Z"
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+	if _, err := parsePageQuery(req, now, defaultMaxRange); err == nil {
+		t.Fatal("expected a 30-day window to be rejected under the 7-day fallback")
+	}
+
+	req = httptest.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
+	if _, err := parsePageQuery(req, now, 60*24*time.Hour); err != nil {
+		t.Fatalf("expected a 30-day window to be accepted under a 60-day range: %v", err)
+	}
 }

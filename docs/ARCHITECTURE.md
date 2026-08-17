@@ -42,7 +42,7 @@ flowchart TB
     subgraph controlplane["Control plane (API node pool)"]
         API["API<br/>REST :80, gRPC :5009/:5109"]
         DashAPI["dashboard-api :3010"]
-        BillingGW["sandbox-billing-read-gateway<br/>fixed terminal-event API"]
+        BillingGW["billing<br/>fixed terminal-event API"]
         CP["client-proxy<br/>:3002"]
         DRP["docker-reverse-proxy :5000"]
     end
@@ -93,7 +93,7 @@ flowchart TB
 | Client proxy | `packages/client-proxy` | API nodes | Edge router: sandbox URL → correct node |
 | Envd | `packages/envd` | inside every VM | In-VM agent: process/filesystem API for SDKs |
 | Dashboard API | `packages/dashboard-api` | API nodes | Backend for the web dashboard (teams, builds, admin) |
-| Sandbox billing read gateway | `packages/sandbox-billing-read-gateway` | API nodes (Azure) | Authenticated, fixed-query projection of ClickHouse terminal lifecycle events for the ZooClaw billing pull worker |
+| Sandbox billing read gateway | `packages/billing` | API nodes (Azure) | Authenticated, fixed-query projection of ClickHouse terminal lifecycle events for the ZooClaw billing pull worker |
 | Docker reverse proxy | `packages/docker-reverse-proxy` | API nodes | Registry auth gateway for pushing template images |
 
 Supporting packages: `packages/shared` (protos, telemetry, storage clients, feature flags),
@@ -185,9 +185,9 @@ A separate REST service (port 3010, spec `spec/openapi-dashboard.yml`) consumed 
 dashboard, not the SDK: team management/provisioning, template tags, build listings, admin
 bootstrap. Talks to Postgres and ClickHouse; never talks to orchestrators.
 
-### Sandbox billing read gateway (`packages/sandbox-billing-read-gateway`)
+### Sandbox billing read gateway (`packages/billing`)
 
-An Azure-only, stateless HTTP service exposed as `billing-events.<domain>`. It authenticates a
+An Azure-only, stateless HTTP service exposed as `billing.<domain>`. It authenticates a
 service bearer token and projects `sandbox.lifecycle.paused` / `sandbox.lifecycle.killed` rows
 from ClickHouse through a fixed, parameter-bound query with `(timestamp,id)` keyset pagination.
 It returns only normalized execution fields; it does not accept SQL, persist a cursor, calculate
@@ -198,7 +198,7 @@ memory, thread, and execution-time limits. Request rate limiting runs after bear
 so unauthenticated Internet traffic cannot consume the billing worker's query budget.
 
 The current bearer token is sourced from Azure Key Vault for both the Nomad job and the GKE
-handoff. Rotation temporarily configures the old value as `sandbox_billing_gateway_previous_token`,
+handoff. Rotation temporarily configures the old value as `billing_gateway_previous_token`,
 updates the Key Vault current value, applies Terraform so Nomad reads the same current value, then
 updates GKE and removes the previous value after the rollout has converged.
 
@@ -379,7 +379,7 @@ packages/
   client-proxy/         Edge router for sandbox traffic
   envd/                 In-VM agent (bump pkg/version.go on behavior change!)
   dashboard-api/        Web-dashboard backend
-  sandbox-billing-read-gateway/  Fixed-query ClickHouse terminal event API (Azure)
+  billing/  Fixed-query ClickHouse terminal event API (Azure)
   docker-reverse-proxy/ Registry auth gateway for template images
   shared/               Protos, telemetry, storage clients, proxy engine, feature flags
   auth/                 AuthN library (API keys, JWT/OIDC) used by api + dashboard-api

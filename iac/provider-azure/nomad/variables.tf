@@ -287,12 +287,12 @@ variable "clickhouse_password" {
   sensitive = true
 }
 
-variable "sandbox_billing_clickhouse_username" {
+variable "billing_clickhouse_username" {
   type    = string
-  default = "sandbox_billing_reader"
+  default = "billing_reader"
 }
 
-variable "sandbox_billing_clickhouse_password" {
+variable "billing_clickhouse_password" {
   type      = string
   default   = ""
   sensitive = true
@@ -394,17 +394,17 @@ variable "dashboard_api_env_vars" {
   sensitive = true
 }
 
-variable "sandbox_billing_gateway_count" {
+variable "billing_gateway_count" {
   type    = number
   default = 0
 }
 
-variable "sandbox_billing_gateway_repository_name" {
+variable "billing_gateway_repository_name" {
   type    = string
   default = ""
 }
 
-variable "sandbox_billing_gateway_env_vars" {
+variable "billing_gateway_env_vars" {
   type      = map(string)
   default   = {}
   sensitive = true

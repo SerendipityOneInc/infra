@@ -161,7 +161,7 @@ module "cloudflare" {
   domain_name = var.domain_name
   # dashboard-api rides the App Gateway path (traefik web entrypoint), so it
   # needs an orange-cloud record like the other control-plane hosts.
-  proxied_subdomains = ["api", "grpc-api", "nomad", "docker", "dashboard-api", "billing-events"]
+  proxied_subdomains = ["api", "grpc-api", "nomad", "docker", "dashboard-api", "billing"]
   lb_frontend_ip     = module.network.appgw_public_ip
   # Sandbox wildcard points at the L4 data-plane LB (HTTP/2/PTY); control-plane
   # hosts stay on the App Gateway.
@@ -356,8 +356,8 @@ locals {
     jwt = []
   }
 
-  clickhouse_connection_string                 = var.clickhouse_cluster_size > 0 ? "clickhouse://${module.init.clickhouse.username}:${module.init.clickhouse.password}@clickhouse.service.consul:${local.clickhouse_port}/${local.clickhouse_database}" : ""
-  sandbox_billing_clickhouse_connection_string = var.clickhouse_cluster_size > 0 ? "clickhouse://${module.init.clickhouse.sandbox_billing_username}:${module.init.clickhouse.sandbox_billing_password}@clickhouse.service.consul:${local.clickhouse_port}/${local.clickhouse_database}" : ""
+  clickhouse_connection_string         = var.clickhouse_cluster_size > 0 ? "clickhouse://${module.init.clickhouse.username}:${module.init.clickhouse.password}@clickhouse.service.consul:${local.clickhouse_port}/${local.clickhouse_database}" : ""
+  billing_clickhouse_connection_string = var.clickhouse_cluster_size > 0 ? "clickhouse://${module.init.clickhouse.billing_username}:${module.init.clickhouse.billing_password}@clickhouse.service.consul:${local.clickhouse_port}/${local.clickhouse_database}" : ""
 
   # The Nomad jobspec template renders each entry as `${key} = "${value}"`,
   # so values that themselves contain `"` characters (like a JSON blob)
@@ -612,11 +612,17 @@ locals {
     LOGS_COLLECTOR_ADDRESS       = "http://localhost:${local.logs_proxy_port}"
   }
 
-  sandbox_billing_gateway_env_vars = {
-    CLICKHOUSE_CONNECTION_STRING           = local.sandbox_billing_clickhouse_connection_string
-    SANDBOX_BILLING_GATEWAY_TOKEN          = module.init.sandbox_billing_gateway_token
-    SANDBOX_BILLING_GATEWAY_PREVIOUS_TOKEN = var.sandbox_billing_gateway_previous_token
-    QUERY_TIMEOUT                          = "5s"
+  billing_gateway_env_vars = {
+    CLICKHOUSE_CONNECTION_STRING   = local.billing_clickhouse_connection_string
+    BILLING_GATEWAY_TOKEN          = module.init.billing_gateway_token
+    BILLING_GATEWAY_PREVIOUS_TOKEN = var.billing_gateway_previous_token
+    QUERY_TIMEOUT                  = "5s"
+
+    # Must not exceed how long sandbox_events actually keeps rows. Retention is
+    # per-team (tiers.events_ttl_days, applied as a per-row TTL), so this has to
+    # track the longest retention any team is on — accepting a wider window
+    # returns a silently incomplete answer rather than an error.
+    MAX_QUERY_RANGE = "${var.billing_max_query_range_days * 24}h"
   }
 }
 
@@ -691,17 +697,17 @@ module "nomad" {
 
   # Observability (ClickHouse + Loki + logs/otel collectors; in-cluster only —
   # no Grafana Cloud account, see nomad/main.tf).
-  clickhouse_node_pool                = local.clickhouse_pool_name
-  clickhouse_job_constraint_prefix    = local.clickhouse_jobs_prefix
-  clickhouse_server_count             = var.clickhouse_cluster_size
-  clickhouse_username                 = module.init.clickhouse.username
-  clickhouse_password                 = module.init.clickhouse.password
-  sandbox_billing_clickhouse_username = module.init.clickhouse.sandbox_billing_username
-  sandbox_billing_clickhouse_password = module.init.clickhouse.sandbox_billing_password
-  clickhouse_server_secret            = module.init.clickhouse.server_secret
-  clickhouse_port                     = local.clickhouse_port
-  clickhouse_database                 = local.clickhouse_database
-  clickhouse_migrator_image           = "${module.init.acr_login_server}/${module.init.clickhouse_migrator_repository_name}:${var.image_tag}"
+  clickhouse_node_pool             = local.clickhouse_pool_name
+  clickhouse_job_constraint_prefix = local.clickhouse_jobs_prefix
+  clickhouse_server_count          = var.clickhouse_cluster_size
+  clickhouse_username              = module.init.clickhouse.username
+  clickhouse_password              = module.init.clickhouse.password
+  billing_clickhouse_username      = module.init.clickhouse.billing_username
+  billing_clickhouse_password      = module.init.clickhouse.billing_password
+  clickhouse_server_secret         = module.init.clickhouse.server_secret
+  clickhouse_port                  = local.clickhouse_port
+  clickhouse_database              = local.clickhouse_database
+  clickhouse_migrator_image        = "${module.init.acr_login_server}/${module.init.clickhouse_migrator_repository_name}:${var.image_tag}"
 
   clickhouse_backups_container_name = module.init.clickhouse_backups_container_name
   storage_account_primary_key       = module.init.storage_account_primary_key
@@ -721,9 +727,9 @@ module "nomad" {
   dashboard_api_repository_name = module.init.dashboard_api_repository_name
   dashboard_api_env_vars        = local.dashboard_api_env_vars
 
-  sandbox_billing_gateway_count           = var.clickhouse_cluster_size > 0 ? var.sandbox_billing_gateway_count : 0
-  sandbox_billing_gateway_repository_name = module.init.sandbox_billing_gateway_repository_name
-  sandbox_billing_gateway_env_vars        = local.sandbox_billing_gateway_env_vars
+  billing_gateway_count           = var.clickhouse_cluster_size > 0 ? var.billing_gateway_count : 0
+  billing_gateway_repository_name = module.init.billing_gateway_repository_name
+  billing_gateway_env_vars        = local.billing_gateway_env_vars
 
   # Feeds the client pool's autoscale rule (see modules/nodepool-client). Reads
   # /nodes over the internal domain so the poll never leaves the VNet.

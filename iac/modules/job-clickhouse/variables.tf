@@ -56,17 +56,17 @@ variable "clickhouse_password" {
   sensitive = true
 }
 
-variable "sandbox_billing_username" {
+variable "billing_username" {
   type    = string
-  default = "sandbox_billing_reader"
+  default = "billing_reader"
 }
 
-variable "sandbox_billing_enabled" {
+variable "billing_enabled" {
   type    = bool
   default = false
 }
 
-variable "sandbox_billing_password" {
+variable "billing_password" {
   type      = string
   default   = ""
   sensitive = true

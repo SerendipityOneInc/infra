@@ -1,4 +1,4 @@
-module github.com/e2b-dev/infra/packages/sandbox-billing-read-gateway
+module github.com/e2b-dev/infra/packages/billing
 
 go 1.26.5
 

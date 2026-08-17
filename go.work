@@ -12,7 +12,7 @@ use (
 	./packages/local-dev
 	./packages/nomad-nodepool-apm
 	./packages/orchestrator
-	./packages/sandbox-billing-read-gateway
+	./packages/billing
 	./packages/shared
 
 	./tests/integration

@@ -127,13 +127,13 @@ output "clickhouse" {
     username                 = "e2b"
     password                 = random_password.clickhouse_password.result
     server_secret            = random_password.clickhouse_server_secret.result
-    sandbox_billing_username = "sandbox_billing_reader"
-    sandbox_billing_password = random_password.sandbox_billing_clickhouse_password.result
+    billing_username = "billing_reader"
+    billing_password = random_password.billing_clickhouse_password.result
   }
 }
 
-output "sandbox_billing_gateway_token" {
-  value     = data.azurerm_key_vault_secret.sandbox_billing_gateway_token.value
+output "billing_gateway_token" {
+  value     = data.azurerm_key_vault_secret.billing_gateway_token.value
   sensitive = true
 }
 
@@ -199,8 +199,8 @@ output "dashboard_api_repository_name" {
   value = "${var.prefix}core/dashboard-api"
 }
 
-output "sandbox_billing_gateway_repository_name" {
-  value = "${var.prefix}core/sandbox-billing-read-gateway"
+output "billing_gateway_repository_name" {
+  value = "${var.prefix}core/billing"
 }
 
 output "grafana_pg_readonly_password" {

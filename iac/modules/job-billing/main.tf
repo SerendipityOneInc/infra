@@ -5,8 +5,8 @@ locals {
   }
 }
 
-resource "nomad_job" "sandbox_billing_read_gateway" {
-  jobspec = templatefile("${path.module}/jobs/sandbox-billing-read-gateway.hcl", {
+resource "nomad_job" "billing" {
+  jobspec = templatefile("${path.module}/jobs/billing.hcl", {
     node_pool     = var.node_pool
     image_name    = var.image
     count         = var.count_instances

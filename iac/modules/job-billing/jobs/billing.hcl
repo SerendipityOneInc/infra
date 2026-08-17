@@ -1,4 +1,4 @@
-job "sandbox-billing-read-gateway" {
+job "billing" {
   node_pool = "${node_pool}"
   priority  = 80
 
@@ -17,16 +17,16 @@ job "sandbox-billing-read-gateway" {
     }
 
     service {
-      name = "sandbox-billing-read-gateway"
+      name = "billing"
       port = "http"
       task = "gateway"
 
       tags = [
         "traefik.enable=true",
-        "traefik.http.routers.sandbox-billing-read-gateway.entrypoints=web",
-        "traefik.http.routers.sandbox-billing-read-gateway.rule=HostRegexp(`billing-events.{domain:.+}`)",
-        "traefik.http.routers.sandbox-billing-read-gateway.ruleSyntax=v2",
-        "traefik.http.routers.sandbox-billing-read-gateway.priority=1000"
+        "traefik.http.routers.billing.entrypoints=web",
+        "traefik.http.routers.billing.rule=HostRegexp(`billing.{domain:.+}`)",
+        "traefik.http.routers.billing.ruleSyntax=v2",
+        "traefik.http.routers.billing.priority=1000"
       ]
 
       check {
