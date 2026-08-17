@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -73,6 +74,68 @@ func TestEventsRejectsMissingAuth(t *testing.T) {
 	newTestServer(&fakeStore{}, now).handler().ServeHTTP(res, req)
 	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d", res.Code)
+	}
+}
+
+func TestReadyReflectsClickHouseAvailability(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "available", status: http.StatusOK},
+		{name: "unavailable", err: errors.New("internal ClickHouse detail"), status: http.StatusServiceUnavailable},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			res := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ready", nil)
+			newTestServer(&fakeStore{err: test.err}, now).handler().ServeHTTP(res, req)
+			if res.Code != test.status {
+				t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+			}
+			if contains(res.Body.String(), "internal ClickHouse detail") {
+				t.Fatalf("readiness response leaked source detail: %s", res.Body.String())
+			}
+		})
+	}
+}
+
+func TestEventsMasksClickHouseFailure(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	svc := newTestServer(&fakeStore{err: errors.New("internal ClickHouse detail")}, now)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/internal/v1/sandbox-events?from=2026-08-17T10:00:00Z&until=2026-08-17T12:00:00Z", nil)
+	req.Header.Set("Authorization", "Bearer "+svc.currentToken)
+	res := httptest.NewRecorder()
+	svc.handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusServiceUnavailable || !contains(res.Body.String(), `"error":"source_unavailable"`) {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if contains(res.Body.String(), "internal ClickHouse detail") {
+		t.Fatalf("response leaked source detail: %s", res.Body.String())
+	}
+}
+
+func TestRequestLogDoesNotExposeServiceToken(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	svc := newTestServer(&fakeStore{}, now)
+	var output bytes.Buffer
+	svc.logger = slog.New(slog.NewJSONHandler(&output, nil))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/internal/v1/sandbox-events?from=2026-08-17T10:00:00Z&until=2026-08-17T12:00:00Z", nil)
+	req.Header.Set("Authorization", "Bearer "+svc.currentToken)
+	res := httptest.NewRecorder()
+	svc.handler().ServeHTTP(res, req)
+
+	log := output.String()
+	if contains(log, svc.currentToken) || contains(log, "Authorization") {
+		t.Fatalf("request log exposed service credentials: %s", log)
 	}
 }
 
