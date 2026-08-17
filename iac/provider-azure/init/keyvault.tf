@@ -74,11 +74,11 @@ resource "azurerm_key_vault_secret" "clickhouse" {
   name         = "${var.prefix}clickhouse"
   key_vault_id = azurerm_key_vault.main.id
   value = jsonencode({
-    CLICKHOUSE_USERNAME      = "e2b",
-    CLICKHOUSE_PASSWORD      = random_password.clickhouse_password.result,
-    SERVER_SECRET            = random_password.clickhouse_server_secret.result,
-    BILLING_USERNAME = "billing_reader",
-    BILLING_PASSWORD = random_password.billing_clickhouse_password.result,
+    CLICKHOUSE_USERNAME = "e2b",
+    CLICKHOUSE_PASSWORD = random_password.clickhouse_password.result,
+    SERVER_SECRET       = random_password.clickhouse_server_secret.result,
+    BILLING_USERNAME    = "billing_reader",
+    BILLING_PASSWORD    = random_password.billing_clickhouse_password.result,
   })
 
   depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]

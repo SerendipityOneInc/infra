@@ -232,13 +232,13 @@ module "clickhouse" {
   cpu_count     = 2
   memory_mb     = 8192
 
-  clickhouse_database      = var.clickhouse_database
-  clickhouse_username      = var.clickhouse_username
-  clickhouse_password      = var.clickhouse_password
-  billing_username = var.billing_clickhouse_username
-  billing_password = var.billing_clickhouse_password
-  billing_enabled  = true
-  clickhouse_port          = var.clickhouse_port
+  clickhouse_database = var.clickhouse_database
+  clickhouse_username = var.clickhouse_username
+  clickhouse_password = var.clickhouse_password
+  billing_username    = var.billing_clickhouse_username
+  billing_password    = var.billing_clickhouse_password
+  billing_enabled     = true
+  clickhouse_port     = var.clickhouse_port
 
   clickhouse_metrics_port = var.clickhouse_metrics_port
   otel_exporter_endpoint  = "http://localhost:${var.otel_collector_grpc_port}"

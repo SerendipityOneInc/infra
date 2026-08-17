@@ -124,9 +124,9 @@ output "cluster" {
 output "clickhouse" {
   sensitive = true
   value = {
-    username                 = "e2b"
-    password                 = random_password.clickhouse_password.result
-    server_secret            = random_password.clickhouse_server_secret.result
+    username         = "e2b"
+    password         = random_password.clickhouse_password.result
+    server_secret    = random_password.clickhouse_server_secret.result
     billing_username = "billing_reader"
     billing_password = random_password.billing_clickhouse_password.result
   }
