@@ -197,7 +197,7 @@ func (s *clickhouseStore) QueryTerminalEvents(ctx context.Context, q pageQuery) 
 	}
 	rows, err := s.conn.Query(ctx, query, args...)
 	if err != nil {
-		return nil, errors.New("query terminal events")
+		return nil, fmt.Errorf("query terminal events: %w", err)
 	}
 	defer rows.Close()
 
@@ -207,12 +207,12 @@ func (s *clickhouseStore) QueryTerminalEvents(ctx context.Context, q pageQuery) 
 		if err := rows.Scan(&event.ID, &event.Version, &event.Type, &event.Timestamp, &event.SandboxID,
 			&event.SandboxExecutionID, &event.SandboxTemplateID, &event.SandboxBuildID,
 			&event.SandboxTeamID, &event.ExecutionData, &event.KillReason); err != nil {
-			return nil, errors.New("scan terminal event")
+			return nil, fmt.Errorf("scan terminal event: %w", err)
 		}
 		result = append(result, event)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, errors.New("iterate terminal events")
+		return nil, fmt.Errorf("iterate terminal events: %w", err)
 	}
 
 	return result, nil
@@ -226,7 +226,7 @@ func (s *clickhouseStore) QueryMissingTerminal(ctx context.Context, lookback tim
 	var oldest sql.NullTime
 	seconds := int64(lookback / time.Second)
 	if err := s.conn.QueryRow(ctx, missingTerminalQuery, seconds, seconds).Scan(&count, &oldest); err != nil {
-		return 0, nil, errors.New("query missing terminal aggregate")
+		return 0, nil, fmt.Errorf("query missing terminal aggregate: %w", err)
 	}
 	if !oldest.Valid {
 		return count, nil, nil
@@ -377,7 +377,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	raw, err := s.store.QueryTerminalEvents(ctx, q)
 	if err != nil {
-		s.logger.Error("billing_gateway_query_failed")
+		s.logger.Error("billing_gateway_query_failed", "error", err.Error())
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "source_unavailable"})
 
 		return
