@@ -548,4 +548,9 @@ variable "sandbox_billing_gateway_previous_token" {
   default     = ""
   sensitive   = true
   description = "Previous gateway bearer token accepted temporarily during rotation."
+
+  validation {
+    condition     = var.sandbox_billing_gateway_previous_token == "" || length(var.sandbox_billing_gateway_previous_token) >= 32
+    error_message = "sandbox_billing_gateway_previous_token must be empty or at least 32 characters."
+  }
 }

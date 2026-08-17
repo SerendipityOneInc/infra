@@ -107,6 +107,15 @@ resource "azurerm_key_vault_secret" "sandbox_billing_gateway_token" {
   }
 }
 
+# Read the effective vault value back so both the Nomad job and the GKE secret
+# handoff consume the same source of truth, including an out-of-band rotation.
+data "azurerm_key_vault_secret" "sandbox_billing_gateway_token" {
+  name         = azurerm_key_vault_secret.sandbox_billing_gateway_token.name
+  key_vault_id = azurerm_key_vault.main.id
+
+  depends_on = [azurerm_key_vault_secret.sandbox_billing_gateway_token]
+}
+
 # ---
 # Grafana (placeholder, populated out of band)
 # ---

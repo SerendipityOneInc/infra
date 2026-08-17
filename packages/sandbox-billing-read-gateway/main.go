@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -23,7 +24,9 @@ import (
 
 const (
 	terminalQueryWithoutCursor = `SELECT id, version, type, timestamp, sandbox_id, sandbox_execution_id,
-  sandbox_template_id, sandbox_build_id, sandbox_team_id, event_data
+  sandbox_template_id, sandbox_build_id, sandbox_team_id,
+  nullIf(JSONExtractRaw(event_data, 'execution'), ''),
+  nullIf(JSONExtractString(event_data, 'kill_reason'), '')
 FROM sandbox_events
 WHERE type IN ('sandbox.lifecycle.paused', 'sandbox.lifecycle.killed')
   AND timestamp >= ? AND timestamp < ?
@@ -31,7 +34,9 @@ ORDER BY timestamp ASC, id ASC
 LIMIT ?`
 
 	terminalQueryWithCursor = `SELECT id, version, type, timestamp, sandbox_id, sandbox_execution_id,
-  sandbox_template_id, sandbox_build_id, sandbox_team_id, event_data
+  sandbox_template_id, sandbox_build_id, sandbox_team_id,
+  nullIf(JSONExtractRaw(event_data, 'execution'), ''),
+  nullIf(JSONExtractString(event_data, 'kill_reason'), '')
 FROM sandbox_events
 WHERE type IN ('sandbox.lifecycle.paused', 'sandbox.lifecycle.killed')
   AND timestamp >= ? AND timestamp < ?
@@ -98,6 +103,10 @@ func loadConfig() (config, error) {
 	if len(cfg.currentToken) < 32 {
 		return config{}, errors.New("SANDBOX_BILLING_GATEWAY_TOKEN must be at least 32 characters")
 	}
+	if cfg.previousToken != "" && len(cfg.previousToken) < 32 {
+		return config{}, errors.New("SANDBOX_BILLING_GATEWAY_PREVIOUS_TOKEN must be at least 32 characters when set")
+	}
+
 	return cfg, nil
 }
 
@@ -110,6 +119,7 @@ func envDuration(name string, fallback time.Duration) (time.Duration, error) {
 	if err != nil || value <= 0 {
 		return 0, fmt.Errorf("%s must be a positive duration", name)
 	}
+
 	return value, nil
 }
 
@@ -123,13 +133,14 @@ type rawEvent struct {
 	SandboxTemplateID  string
 	SandboxBuildID     string
 	SandboxTeamID      uuid.UUID
-	EventData          sql.NullString
+	ExecutionData      sql.NullString
+	KillReason         sql.NullString
 }
 
 type eventStore interface {
-	QueryTerminalEvents(context.Context, pageQuery) ([]rawEvent, error)
-	Ping(context.Context) error
-	QueryMissingTerminal(context.Context) (uint64, *time.Time, error)
+	QueryTerminalEvents(ctx context.Context, query pageQuery) ([]rawEvent, error)
+	Ping(ctx context.Context) error
+	QueryMissingTerminal(ctx context.Context) (uint64, *time.Time, error)
 	Close() error
 }
 
@@ -147,6 +158,7 @@ func newClickhouseStore(dsn string) (*clickhouseStore, error) {
 	if err != nil {
 		return nil, errors.New("open ClickHouse connection")
 	}
+
 	return &clickhouseStore{conn: conn}, nil
 }
 
@@ -176,7 +188,7 @@ func (s *clickhouseStore) QueryTerminalEvents(ctx context.Context, q pageQuery) 
 		var event rawEvent
 		if err := rows.Scan(&event.ID, &event.Version, &event.Type, &event.Timestamp, &event.SandboxID,
 			&event.SandboxExecutionID, &event.SandboxTemplateID, &event.SandboxBuildID,
-			&event.SandboxTeamID, &event.EventData); err != nil {
+			&event.SandboxTeamID, &event.ExecutionData, &event.KillReason); err != nil {
 			return nil, errors.New("scan terminal event")
 		}
 		result = append(result, event)
@@ -184,6 +196,7 @@ func (s *clickhouseStore) QueryTerminalEvents(ctx context.Context, q pageQuery) 
 	if err := rows.Err(); err != nil {
 		return nil, errors.New("iterate terminal events")
 	}
+
 	return result, nil
 }
 
@@ -200,6 +213,7 @@ func (s *clickhouseStore) QueryMissingTerminal(ctx context.Context) (uint64, *ti
 		return count, nil, nil
 	}
 	value := oldest.Time.UTC()
+
 	return count, &value, nil
 }
 
@@ -208,11 +222,6 @@ type executionPayload struct {
 	ExecutionTimeMS json.Number `json:"execution_time"`
 	VCPUCount       json.Number `json:"vcpu_count"`
 	MemoryMB        json.Number `json:"memory_mb"`
-}
-
-type eventDataPayload struct {
-	Execution  *executionPayload `json:"execution"`
-	KillReason *string           `json:"kill_reason"`
 }
 
 type apiExecution struct {
@@ -255,6 +264,35 @@ type server struct {
 	queryTimeout  time.Duration
 	now           func() time.Time
 	logger        *slog.Logger
+	limiter       *requestLimiter
+}
+
+type requestLimiter struct {
+	mu        sync.Mutex
+	rate      float64
+	burst     float64
+	tokens    float64
+	updatedAt time.Time
+}
+
+func newRequestLimiter(rate float64, burst int, now time.Time) *requestLimiter {
+	return &requestLimiter{rate: rate, burst: float64(burst), tokens: float64(burst), updatedAt: now}
+}
+
+func (l *requestLimiter) allow(now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	elapsed := now.Sub(l.updatedAt).Seconds()
+	if elapsed > 0 {
+		l.tokens = min(l.burst, l.tokens+elapsed*l.rate)
+		l.updatedAt = now
+	}
+	if l.tokens < 1 {
+		return false
+	}
+	l.tokens--
+
+	return true
 }
 
 func (s *server) handler() http.Handler {
@@ -262,6 +300,7 @@ func (s *server) handler() http.Handler {
 	mux.HandleFunc("GET /live", s.live)
 	mux.HandleFunc("GET /ready", s.ready)
 	mux.HandleFunc("GET /internal/v1/sandbox-events", s.authorize(s.events))
+
 	return s.requestLog(mux)
 }
 
@@ -270,6 +309,12 @@ func (s *server) authorize(next http.HandlerFunc) http.HandlerFunc {
 		header := r.Header.Get("Authorization")
 		if !strings.HasPrefix(header, "Bearer ") || !s.validToken(strings.TrimPrefix(header, "Bearer ")) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+
+			return
+		}
+		if s.limiter != nil && !s.limiter.allow(s.now()) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate_limited"})
+
 			return
 		}
 		next(w, r)
@@ -282,6 +327,7 @@ func (s *server) validToken(token string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -294,6 +340,7 @@ func (s *server) ready(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	if err := s.store.Ping(ctx); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -303,6 +350,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	q, err := parsePageQuery(r, s.now().UTC())
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request", "detail": err.Error()})
+
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.queryTimeout)
@@ -311,6 +359,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Error("sandbox_billing_gateway_query_failed")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "source_unavailable"})
+
 		return
 	}
 
@@ -379,6 +428,7 @@ func parsePageQuery(r *http.Request, now time.Time) (pageQuery, error) {
 		}
 		q.afterTimestamp, q.afterID = &parsedTimestamp, &parsedID
 	}
+
 	return q, nil
 }
 
@@ -390,19 +440,22 @@ func normalizeEvent(raw rawEvent) apiEvent {
 		SandboxExecutionID: raw.SandboxExecutionID, SandboxTemplateID: raw.SandboxTemplateID,
 		SandboxBuildID: raw.SandboxBuildID, SandboxTeamID: raw.SandboxTeamID.String(),
 	}
-	if !raw.EventData.Valid {
+	if raw.KillReason.Valid {
+		result.CloseReason = &raw.KillReason.String
+	}
+	if !raw.ExecutionData.Valid {
 		return result
 	}
-	decoder := json.NewDecoder(strings.NewReader(raw.EventData.String))
+	decoder := json.NewDecoder(strings.NewReader(raw.ExecutionData.String))
 	decoder.UseNumber()
-	var data eventDataPayload
-	if err := decoder.Decode(&data); err != nil || data.Execution == nil {
+	var execution executionPayload
+	if err := decoder.Decode(&execution); err != nil {
 		return result
 	}
-	startedAt, err := time.Parse(time.RFC3339Nano, data.Execution.StartedAt)
-	duration, durationErr := data.Execution.ExecutionTimeMS.Int64()
-	vcpu, vcpuErr := data.Execution.VCPUCount.Int64()
-	memory, memoryErr := data.Execution.MemoryMB.Int64()
+	startedAt, err := time.Parse(time.RFC3339Nano, execution.StartedAt)
+	duration, durationErr := execution.ExecutionTimeMS.Int64()
+	vcpu, vcpuErr := execution.VCPUCount.Int64()
+	memory, memoryErr := execution.MemoryMB.Int64()
 	if err != nil || durationErr != nil || vcpuErr != nil || memoryErr != nil || duration < 0 || vcpu <= 0 || memory <= 0 {
 		return result
 	}
@@ -410,12 +463,13 @@ func normalizeEvent(raw rawEvent) apiEvent {
 		StartedAt: startedAt.UTC().Format(time.RFC3339Nano), ExecutionTimeMS: duration,
 		VCPUCount: vcpu, MemoryMB: memory,
 	}
-	result.CloseReason = data.KillReason
+
 	return result
 }
 
 type statusRecorder struct {
 	http.ResponseWriter
+
 	status int
 }
 
@@ -436,7 +490,9 @@ func (s *server) requestLog(next http.Handler) http.Handler {
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		slog.Default().Error("http_response_encode_failed", "error", err.Error())
+	}
 }
 
 func runMissingTerminalLogger(ctx context.Context, store eventStore, timeout time.Duration, logger *slog.Logger) {
@@ -448,6 +504,7 @@ func runMissingTerminalLogger(ctx context.Context, store eventStore, timeout tim
 		count, oldest, err := store.QueryMissingTerminal(queryCtx)
 		if err != nil {
 			logger.Error("sandbox_billing_terminal_missing_check_failed")
+
 			return
 		}
 		if count == 0 {
@@ -470,23 +527,29 @@ func runMissingTerminalLogger(ctx context.Context, store eventStore, timeout tim
 	}
 }
 
-func main() {
+func run() int {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	cfg, err := loadConfig()
 	if err != nil {
 		logger.Error("configuration_error", "error", err.Error())
-		os.Exit(1)
+
+		return 1
 	}
 	store, err := newClickhouseStore(cfg.clickhouseDSN)
 	if err != nil {
 		logger.Error("clickhouse_initialization_failed")
-		os.Exit(1)
+
+		return 1
 	}
 	defer store.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	svc := &server{store: store, currentToken: cfg.currentToken, previousToken: cfg.previousToken, queryTimeout: cfg.queryTimeout, now: time.Now, logger: logger}
+	svc := &server{
+		store: store, currentToken: cfg.currentToken, previousToken: cfg.previousToken,
+		queryTimeout: cfg.queryTimeout, now: time.Now, logger: logger,
+		limiter: newRequestLimiter(10, 20, time.Now()),
+	}
 	httpServer := &http.Server{
 		Addr: cfg.address, Handler: svc.handler(), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second,
@@ -494,13 +557,20 @@ func main() {
 	go runMissingTerminalLogger(ctx, store, cfg.queryTimeout, logger)
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.shutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.shutdownTimeout)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
 	logger.Info("sandbox_billing_read_gateway_started", "address", cfg.address)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("http_server_failed", "error", err.Error())
-		os.Exit(1)
+
+		return 1
 	}
+
+	return 0
+}
+
+func main() {
+	os.Exit(run())
 }

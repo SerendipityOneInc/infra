@@ -192,7 +192,15 @@ service bearer token and projects `sandbox.lifecycle.paused` / `sandbox.lifecycl
 from ClickHouse through a fixed, parameter-bound query with `(timestamp,id)` keyset pagination.
 It returns only normalized execution fields; it does not accept SQL, persist a cursor, calculate
 prices, resolve customer identity, or call the billing system. A dedicated ClickHouse user is
-limited to the required `sandbox_events` columns and a read-only resource-limited profile.
+limited to the required `sandbox_events` columns and a read-only resource-limited profile. The
+fixed query extracts only the execution and close-reason JSON fields and enforces row, byte,
+memory, thread, and execution-time limits. Request rate limiting runs after bearer authentication,
+so unauthenticated Internet traffic cannot consume the billing worker's query budget.
+
+The current bearer token is sourced from Azure Key Vault for both the Nomad job and the GKE
+handoff. Rotation temporarily configures the old value as `sandbox_billing_gateway_previous_token`,
+updates the Key Vault current value, applies Terraform so Nomad reads the same current value, then
+updates GKE and removes the previous value after the rollout has converged.
 
 ### Docker reverse proxy (`packages/docker-reverse-proxy`)
 

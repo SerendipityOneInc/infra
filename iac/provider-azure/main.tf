@@ -721,7 +721,7 @@ module "nomad" {
   dashboard_api_repository_name = module.init.dashboard_api_repository_name
   dashboard_api_env_vars        = local.dashboard_api_env_vars
 
-  sandbox_billing_gateway_count           = var.sandbox_billing_gateway_count
+  sandbox_billing_gateway_count           = var.clickhouse_cluster_size > 0 ? var.sandbox_billing_gateway_count : 0
   sandbox_billing_gateway_repository_name = module.init.sandbox_billing_gateway_repository_name
   sandbox_billing_gateway_env_vars        = local.sandbox_billing_gateway_env_vars
 

@@ -26,10 +26,7 @@ job "sandbox-billing-read-gateway" {
         "traefik.http.routers.sandbox-billing-read-gateway.entrypoints=web",
         "traefik.http.routers.sandbox-billing-read-gateway.rule=HostRegexp(`billing-events.{domain:.+}`)",
         "traefik.http.routers.sandbox-billing-read-gateway.ruleSyntax=v2",
-        "traefik.http.routers.sandbox-billing-read-gateway.priority=1000",
-        "traefik.http.routers.sandbox-billing-read-gateway.middlewares=sandbox-billing-read-gateway-ratelimit",
-        "traefik.http.middlewares.sandbox-billing-read-gateway-ratelimit.ratelimit.average=10",
-        "traefik.http.middlewares.sandbox-billing-read-gateway-ratelimit.ratelimit.burst=20"
+        "traefik.http.routers.sandbox-billing-read-gateway.priority=1000"
       ]
 
       check {

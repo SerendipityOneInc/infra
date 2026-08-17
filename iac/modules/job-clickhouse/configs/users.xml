@@ -19,7 +19,9 @@
             <max_rows_to_read>1000000</max_rows_to_read>
             <max_result_rows>1001</max_result_rows>
             <max_threads>2</max_threads>
-            <max_memory_usage>268435456</max_memory_usage>
+            <max_bytes_to_read>67108864</max_bytes_to_read>
+            <max_result_bytes>67108864</max_result_bytes>
+            <max_memory_usage>134217728</max_memory_usage>
         </sandbox_billing_reader>
     </profiles>
 

@@ -133,7 +133,7 @@ output "clickhouse" {
 }
 
 output "sandbox_billing_gateway_token" {
-  value     = random_password.sandbox_billing_gateway_token.result
+  value     = data.azurerm_key_vault_secret.sandbox_billing_gateway_token.value
   sensitive = true
 }
 
