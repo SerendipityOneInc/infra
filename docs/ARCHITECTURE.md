@@ -93,7 +93,7 @@ flowchart TB
 | Client proxy | `packages/client-proxy` | API nodes | Edge router: sandbox URL → correct node |
 | Envd | `packages/envd` | inside every VM | In-VM agent: process/filesystem API for SDKs |
 | Dashboard API | `packages/dashboard-api` | API nodes | Backend for the web dashboard (teams, builds, admin) |
-| Sandbox billing read gateway | `packages/billing` | API nodes (Azure) | Authenticated, fixed-query projection of ClickHouse terminal lifecycle events for the ZooClaw billing pull worker |
+| Billing gateway | `packages/billing` | API nodes (Azure) | Authenticated, fixed-query projection of ClickHouse terminal lifecycle events for the ZooClaw billing pull worker |
 | Docker reverse proxy | `packages/docker-reverse-proxy` | API nodes | Registry auth gateway for pushing template images |
 
 Supporting packages: `packages/shared` (protos, telemetry, storage clients, feature flags),
@@ -185,7 +185,7 @@ A separate REST service (port 3010, spec `spec/openapi-dashboard.yml`) consumed 
 dashboard, not the SDK: team management/provisioning, template tags, build listings, admin
 bootstrap. Talks to Postgres and ClickHouse; never talks to orchestrators.
 
-### Sandbox billing read gateway (`packages/billing`)
+### Billing gateway (`packages/billing`)
 
 An Azure-only, stateless HTTP service exposed as `billing.<domain>`. It authenticates a
 service bearer token and projects `sandbox.lifecycle.paused` / `sandbox.lifecycle.killed` rows
@@ -214,7 +214,7 @@ into the cloud artifact registry (`/v2/e2b/custom-envs/<templateID>` → project
 |---|---|---|
 | **PostgreSQL** | `packages/db` (goose migrations, sqlc) | Durable control-plane state: `teams`, `users`, `tiers` (quotas), `envs` (templates), `env_builds` (build rows: vcpu, ram_mb, status, versions), `env_aliases`, `snapshots` (paused sandboxes), `team_api_keys`, `access_tokens`, `volumes`, `clusters` |
 | **Redis** | API, client-proxy, orchestrator | Ephemeral runtime state: running-sandbox store (source of truth), sandbox→node routing catalog, team/template/snapshot caches, rate limiting, P2P chunk peer registry |
-| **ClickHouse** | `packages/clickhouse` | Time-series/analytics: `metrics_gauge`/`metrics_sum` (written by the OTel collector), `sandbox_events`, `sandbox_host_stats` (written by orchestrator), team metrics. Read by API, dashboard-api, and the fixed-query sandbox billing read gateway |
+| **ClickHouse** | `packages/clickhouse` | Time-series/analytics: `metrics_gauge`/`metrics_sum` (written by the OTel collector), `sandbox_events`, `sandbox_host_stats` (written by orchestrator), team metrics. Read by API, dashboard-api, and the fixed-query billing gateway |
 | **Object storage** (GCS/S3/local, `packages/shared/pkg/storage`) | orchestrator, template-manager | Template & snapshot artifacts, keyed by build ID: `{buildID}/memfile`, `{buildID}/rootfs.ext4`, `{buildID}/snapfile`, `{buildID}/metadata.json` + `.header` index files |
 | **Consul KV** | orchestrator | Network slot allocation across restarts |
 
@@ -340,7 +340,7 @@ flowchart TB
         NS["Nomad + Consul servers (control plane)"]
     end
     subgraph apipool["api pool"]
-        AJ["api, dashboard-api, sandbox billing read gateway,<br/>client-proxy, ingress (Traefik), docker-reverse-proxy,<br/>redis, loki, otel-collector, autoscaler"]
+        AJ["api, dashboard-api, billing gateway,<br/>client-proxy, ingress (Traefik), docker-reverse-proxy,<br/>redis, loki, otel-collector, autoscaler"]
     end
     subgraph clientpool["default pool (autoscaled)"]
         OJ["orchestrator (system job, raw_exec)<br/>+ Firecracker sandboxes"]

@@ -535,7 +535,7 @@ variable "dashboard_api_count" {
 variable "billing_gateway_count" {
   type        = number
   default     = 1
-  description = "Number of sandbox billing read gateway instances. Use 1 in staging and 2 in production."
+  description = "Number of billing gateway instances. Use 1 in staging and 2 in production."
 
   validation {
     condition     = var.billing_gateway_count >= 0 && var.billing_gateway_count <= 2
@@ -558,7 +558,7 @@ variable "billing_gateway_previous_token" {
 variable "billing_max_query_range_days" {
   type        = number
   description = <<-EOT
-    Widest time window the sandbox billing read gateway will accept, in days.
+    Widest time window the billing gateway will accept, in days.
 
     Keep it at or below the event retention actually in force. Retention is
     per-team (tiers.events_ttl_days in Postgres, applied as a per-row TTL on

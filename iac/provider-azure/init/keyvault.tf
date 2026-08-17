@@ -88,7 +88,7 @@ resource "azurerm_key_vault_secret" "clickhouse" {
   }
 }
 
-# Shared by the public read gateway and the GKE pull worker. Rotation accepts
+# Shared by the billing gateway and the GKE pull worker. Rotation accepts
 # the old token through BILLING_GATEWAY_PREVIOUS_TOKEN during rollout.
 resource "random_password" "billing_gateway_token" {
   length  = 43
