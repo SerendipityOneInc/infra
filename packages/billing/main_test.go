@@ -90,6 +90,8 @@ func TestReadyReflectsClickHouseAvailability(t *testing.T) {
 		{name: "unavailable", err: errors.New("internal ClickHouse detail"), status: http.StatusServiceUnavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			res := httptest.NewRecorder()
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ready", nil)
 			newTestServer(&fakeStore{err: test.err}, now).handler().ServeHTTP(res, req)
