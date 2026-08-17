@@ -24,6 +24,7 @@ type fakeStore struct {
 
 func (f *fakeStore) QueryTerminalEvents(_ context.Context, query pageQuery) ([]rawEvent, error) {
 	f.lastQuery = query
+
 	return f.events, f.err
 }
 func (f *fakeStore) Ping(context.Context) error { return f.err }
