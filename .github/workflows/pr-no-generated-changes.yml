@@ -91,14 +91,14 @@ jobs:
 
       - name: Capture generated diff without auto-fix credentials
         if: ${{ inputs.commit == true && steps.app-token.outputs.token == '' }}
-        run: git diff --binary --output=generated-changes.patch
+        run: git diff --binary --output="${RUNNER_TEMP}/generated-changes.patch"
 
       - name: Upload generated diff without auto-fix credentials
         if: ${{ inputs.commit == true && steps.app-token.outputs.token == '' }}
         uses: actions/upload-artifact@v6
         with:
           name: generated-changes-patch
-          path: generated-changes.patch
+          path: ${{ runner.temp }}/generated-changes.patch
           retention-days: 1
 
       - name: Commit generated changes if any
