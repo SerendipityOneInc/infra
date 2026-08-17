@@ -532,3 +532,20 @@ variable "dashboard_api_count" {
   default = 1
 }
 
+variable "sandbox_billing_gateway_count" {
+  type        = number
+  default     = 1
+  description = "Number of sandbox billing read gateway instances. Use 1 in staging and 2 in production."
+
+  validation {
+    condition     = var.sandbox_billing_gateway_count >= 0 && var.sandbox_billing_gateway_count <= 2
+    error_message = "sandbox_billing_gateway_count must be between 0 and 2."
+  }
+}
+
+variable "sandbox_billing_gateway_previous_token" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Previous gateway bearer token accepted temporarily during rotation."
+}

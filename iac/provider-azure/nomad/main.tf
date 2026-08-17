@@ -232,10 +232,13 @@ module "clickhouse" {
   cpu_count     = 2
   memory_mb     = 8192
 
-  clickhouse_database = var.clickhouse_database
-  clickhouse_username = var.clickhouse_username
-  clickhouse_password = var.clickhouse_password
-  clickhouse_port     = var.clickhouse_port
+  clickhouse_database      = var.clickhouse_database
+  clickhouse_username      = var.clickhouse_username
+  clickhouse_password      = var.clickhouse_password
+  sandbox_billing_username = var.sandbox_billing_clickhouse_username
+  sandbox_billing_password = var.sandbox_billing_clickhouse_password
+  sandbox_billing_enabled  = true
+  clickhouse_port          = var.clickhouse_port
 
   clickhouse_metrics_port = var.clickhouse_metrics_port
   otel_exporter_endpoint  = "http://localhost:${var.otel_collector_grpc_port}"
@@ -337,4 +340,15 @@ module "dashboard_api" {
   image = "${var.acr_login_server}/${var.dashboard_api_repository_name}:${var.image_tag}"
 
   job_env_vars = var.dashboard_api_env_vars
+}
+
+module "sandbox_billing_read_gateway" {
+  source = "../../modules/job-sandbox-billing-read-gateway"
+  count  = var.sandbox_billing_gateway_count > 0 ? 1 : 0
+
+  count_instances = var.sandbox_billing_gateway_count
+  node_pool       = var.api_node_pool
+  update_stanza   = var.sandbox_billing_gateway_count > 1
+  image           = "${var.acr_login_server}/${var.sandbox_billing_gateway_repository_name}:${var.image_tag}"
+  job_env_vars    = var.sandbox_billing_gateway_env_vars
 }

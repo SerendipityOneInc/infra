@@ -124,10 +124,17 @@ output "cluster" {
 output "clickhouse" {
   sensitive = true
   value = {
-    username      = "e2b"
-    password      = random_password.clickhouse_password.result
-    server_secret = random_password.clickhouse_server_secret.result
+    username                 = "e2b"
+    password                 = random_password.clickhouse_password.result
+    server_secret            = random_password.clickhouse_server_secret.result
+    sandbox_billing_username = "sandbox_billing_reader"
+    sandbox_billing_password = random_password.sandbox_billing_clickhouse_password.result
   }
+}
+
+output "sandbox_billing_gateway_token" {
+  value     = random_password.sandbox_billing_gateway_token.result
+  sensitive = true
 }
 
 output "api_secret" {
@@ -190,6 +197,10 @@ output "grafana_admin_password" {
 
 output "dashboard_api_repository_name" {
   value = "${var.prefix}core/dashboard-api"
+}
+
+output "sandbox_billing_gateway_repository_name" {
+  value = "${var.prefix}core/sandbox-billing-read-gateway"
 }
 
 output "grafana_pg_readonly_password" {

@@ -65,14 +65,40 @@ resource "random_password" "clickhouse_server_secret" {
   special = false
 }
 
+resource "random_password" "sandbox_billing_clickhouse_password" {
+  length  = 32
+  special = false
+}
+
 resource "azurerm_key_vault_secret" "clickhouse" {
   name         = "${var.prefix}clickhouse"
   key_vault_id = azurerm_key_vault.main.id
   value = jsonencode({
-    CLICKHOUSE_USERNAME = "e2b",
-    CLICKHOUSE_PASSWORD = random_password.clickhouse_password.result,
-    SERVER_SECRET       = random_password.clickhouse_server_secret.result,
+    CLICKHOUSE_USERNAME      = "e2b",
+    CLICKHOUSE_PASSWORD      = random_password.clickhouse_password.result,
+    SERVER_SECRET            = random_password.clickhouse_server_secret.result,
+    SANDBOX_BILLING_USERNAME = "sandbox_billing_reader",
+    SANDBOX_BILLING_PASSWORD = random_password.sandbox_billing_clickhouse_password.result,
   })
+
+  depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# Shared by the public read gateway and the GKE pull worker. Rotation accepts
+# the old token through SANDBOX_BILLING_GATEWAY_PREVIOUS_TOKEN during rollout.
+resource "random_password" "sandbox_billing_gateway_token" {
+  length  = 43
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "sandbox_billing_gateway_token" {
+  name         = "${var.prefix}sandbox-billing-gateway-token"
+  key_vault_id = azurerm_key_vault.main.id
+  value        = random_password.sandbox_billing_gateway_token.result
 
   depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
 
