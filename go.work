@@ -3,6 +3,7 @@ go 1.26.5
 use (
 	./packages/api
 	./packages/auth
+	./packages/billing
 	./packages/clickhouse
 	./packages/client-proxy
 	./packages/dashboard-api
@@ -12,7 +13,6 @@ use (
 	./packages/local-dev
 	./packages/nomad-nodepool-apm
 	./packages/orchestrator
-	./packages/billing
 	./packages/shared
 
 	./tests/integration
