@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/google/uuid"
 )
 
@@ -277,6 +279,35 @@ func TestTerminalQueriesDoNotReturnWholeEventData(t *testing.T) {
 		}
 		if !contains(query, "JSONExtractRaw(event_data, 'execution')") {
 			t.Fatal("terminal query does not project execution")
+		}
+	}
+}
+
+func TestTerminalQueryBindsNanosecondTimestamps(t *testing.T) {
+	t.Parallel()
+
+	from := time.Date(2026, 8, 17, 10, 0, 0, 123456789, time.UTC)
+	until := from.Add(time.Hour)
+	afterTimestamp := from.Add(time.Minute)
+	afterID := uuid.New()
+	query := pageQuery{
+		from: from, until: until, afterTimestamp: &afterTimestamp, afterID: &afterID, limit: 50,
+	}
+
+	_, args := terminalQueryAndArgs(query)
+	namedDates := make(map[string]driver.NamedDateValue)
+	for _, arg := range args {
+		if value, ok := arg.(driver.NamedDateValue); ok {
+			namedDates[value.Name] = value
+		}
+	}
+	for _, name := range []string{"from", "until", "after_timestamp"} {
+		value, ok := namedDates[name]
+		if !ok {
+			t.Fatalf("missing named date argument %q", name)
+		}
+		if value.Scale != uint8(clickhouse.NanoSeconds) {
+			t.Fatalf("%s precision = %d, want nanoseconds", name, value.Scale)
 		}
 	}
 }

@@ -29,9 +29,9 @@ const (
   nullIf(JSONExtractString(event_data, 'kill_reason'), '')
 FROM sandbox_events
 WHERE type IN ('sandbox.lifecycle.paused', 'sandbox.lifecycle.killed')
-  AND timestamp >= ? AND timestamp < ?
+  AND timestamp >= @from AND timestamp < @until
 ORDER BY timestamp ASC, id ASC
-LIMIT ?`
+LIMIT @limit`
 
 	terminalQueryWithCursor = `SELECT id, version, type, timestamp, sandbox_id, sandbox_execution_id,
   sandbox_template_id, sandbox_build_id, sandbox_team_id,
@@ -39,10 +39,10 @@ LIMIT ?`
   nullIf(JSONExtractString(event_data, 'kill_reason'), '')
 FROM sandbox_events
 WHERE type IN ('sandbox.lifecycle.paused', 'sandbox.lifecycle.killed')
-  AND timestamp >= ? AND timestamp < ?
-  AND (timestamp, id) > (?, ?)
+  AND timestamp >= @from AND timestamp < @until
+  AND (timestamp, id) > (@after_timestamp, @after_id)
 ORDER BY timestamp ASC, id ASC
-LIMIT ?`
+LIMIT @limit`
 
 	// The lookback is the retention window, not a fixed 7 days: with a longer
 	// retention an execution that started 10 days ago and never terminated
@@ -189,12 +189,7 @@ type pageQuery struct {
 }
 
 func (s *clickhouseStore) QueryTerminalEvents(ctx context.Context, q pageQuery) ([]rawEvent, error) {
-	query := terminalQueryWithoutCursor
-	args := []any{q.from, q.until, q.limit + 1}
-	if q.afterTimestamp != nil && q.afterID != nil {
-		query = terminalQueryWithCursor
-		args = []any{q.from, q.until, *q.afterTimestamp, *q.afterID, q.limit + 1}
-	}
+	query, args := terminalQueryAndArgs(q)
 	rows, err := s.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query terminal events: %w", err)
@@ -216,6 +211,24 @@ func (s *clickhouseStore) QueryTerminalEvents(ctx context.Context, q pageQuery) 
 	}
 
 	return result, nil
+}
+
+func terminalQueryAndArgs(q pageQuery) (string, []any) {
+	query := terminalQueryWithoutCursor
+	args := []any{
+		clickhouse.DateNamed("from", q.from, clickhouse.NanoSeconds),
+		clickhouse.DateNamed("until", q.until, clickhouse.NanoSeconds),
+		clickhouse.Named("limit", q.limit+1),
+	}
+	if q.afterTimestamp != nil && q.afterID != nil {
+		query = terminalQueryWithCursor
+		args = append(args,
+			clickhouse.DateNamed("after_timestamp", *q.afterTimestamp, clickhouse.NanoSeconds),
+			clickhouse.Named("after_id", *q.afterID),
+		)
+	}
+
+	return query, args
 }
 
 func (s *clickhouseStore) Ping(ctx context.Context) error { return s.conn.Ping(ctx) }
@@ -415,7 +428,7 @@ func parsePageQuery(r *http.Request, now time.Time, maxRange time.Duration) (pag
 	}
 	from, until = from.UTC(), until.UTC()
 	if !until.After(from) || until.Sub(from) > maxRange {
-		return pageQuery{}, errors.New("time range must be positive and at most 7 days")
+		return pageQuery{}, errors.New("time range must be positive and within the configured maximum")
 	}
 	if until.After(now) {
 		return pageQuery{}, errors.New("until cannot be in the future")
