@@ -19,14 +19,14 @@ var azureIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 func TestAzureKeyEncoding_WhenRoundTripped_ShouldPreserveKeyAndBeValidIdentifier(t *testing.T) {
 	keys := []string{
 		// Real shared metadata keys (both styles).
-		storageopts.ObjectMetadataTeamID,          // team_id
-		storageopts.ObjectMetadataTemplateID,      // template_id
-		storageopts.ObjectMetadataBuildOrigin,     // build_origin
+		storageopts.ObjectMetadataTeamID,           // team_id
+		storageopts.ObjectMetadataTemplateID,       // template_id
+		storageopts.ObjectMetadataBuildOrigin,      // build_origin
 		storageopts.ObjectMetadataUncompressedSize, // uncompressed-size
-		storageopts.ObjectMetadataLogicalSize,     // logical-size
-		storageopts.ObjectMetadataMappedSize,      // mapped-size
-		storageopts.ObjectMetadataDiffSize,        // diff-size
-		storageopts.ObjectMetadataSoftDeleted,     // storage-index-soft-deleted
+		storageopts.ObjectMetadataLogicalSize,      // logical-size
+		storageopts.ObjectMetadataMappedSize,       // mapped-size
+		storageopts.ObjectMetadataDiffSize,         // diff-size
+		storageopts.ObjectMetadataSoftDeleted,      // storage-index-soft-deleted
 		// Edge cases that must survive round-trip unambiguously.
 		"a-b_c",
 		"already_underscored",

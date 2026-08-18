@@ -56,6 +56,22 @@ variable "clickhouse_password" {
   sensitive = true
 }
 
+variable "billing_username" {
+  type    = string
+  default = "billing_reader"
+}
+
+variable "billing_enabled" {
+  type    = bool
+  default = false
+}
+
+variable "billing_password" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
 variable "clickhouse_port" {
   type = number
 }

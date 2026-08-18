@@ -1003,6 +1003,12 @@ type SandboxVolumeMount struct {
 
 	// Path Path of the volume
 	Path string `json:"path"`
+
+	// ReadOnly Enforce read-only at the host NFS proxy (not just guest mount flags). Defaults to false.
+	ReadOnly *bool `json:"readOnly,omitempty"`
+
+	// Source Optional validated relative subtree under the volume's root to export instead of the default per-volume UUID directory (subtree-export). Must be a clean relative path with no '..' escape.
+	Source *string `json:"source,omitempty"`
 }
 
 // SandboxesWithMetrics defines model for SandboxesWithMetrics.

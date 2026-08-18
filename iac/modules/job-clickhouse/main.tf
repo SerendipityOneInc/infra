@@ -11,8 +11,12 @@ locals {
   })
 
   clickhouse_users_config = templatefile("${path.module}/configs/users.xml", {
-    username = var.clickhouse_username
-    password = var.clickhouse_password
+    username         = var.clickhouse_username
+    password         = var.clickhouse_password
+    database         = var.clickhouse_database
+    billing_enabled  = var.billing_enabled
+    billing_username = var.billing_username
+    billing_password = var.billing_password
   })
 
   otel_agent_config = templatefile("${path.module}/configs/otel-agent.yaml", {

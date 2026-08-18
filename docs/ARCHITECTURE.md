@@ -42,6 +42,7 @@ flowchart TB
     subgraph controlplane["Control plane (API node pool)"]
         API["API<br/>REST :80, gRPC :5009/:5109"]
         DashAPI["dashboard-api :3010"]
+        BillingGW["billing<br/>fixed terminal-event API"]
         CP["client-proxy<br/>:3002"]
         DRP["docker-reverse-proxy :5000"]
     end
@@ -77,6 +78,7 @@ flowchart TB
     ENVD --> USERPROC
     API --> PG & RD & CH
     DashAPI --> PG & CH
+    BillingGW -->|"read-only SELECT"| CH
     ORCH --> OS & CH
     TM --> OS
 ```
@@ -91,6 +93,7 @@ flowchart TB
 | Client proxy | `packages/client-proxy` | API nodes | Edge router: sandbox URL → correct node |
 | Envd | `packages/envd` | inside every VM | In-VM agent: process/filesystem API for SDKs |
 | Dashboard API | `packages/dashboard-api` | API nodes | Backend for the web dashboard (teams, builds, admin) |
+| Billing gateway | `packages/billing` | API nodes (Azure) | Authenticated, fixed-query projection of ClickHouse terminal lifecycle events for the ZooClaw billing pull worker |
 | Docker reverse proxy | `packages/docker-reverse-proxy` | API nodes | Registry auth gateway for pushing template images |
 
 Supporting packages: `packages/shared` (protos, telemetry, storage clients, feature flags),
@@ -182,6 +185,23 @@ A separate REST service (port 3010, spec `spec/openapi-dashboard.yml`) consumed 
 dashboard, not the SDK: team management/provisioning, template tags, build listings, admin
 bootstrap. Talks to Postgres and ClickHouse; never talks to orchestrators.
 
+### Billing gateway (`packages/billing`)
+
+An Azure-only, stateless HTTP service exposed as `billing.<domain>`. It authenticates a
+service bearer token and projects `sandbox.lifecycle.paused` / `sandbox.lifecycle.killed` rows
+from ClickHouse through a fixed, parameter-bound query with `(timestamp,id)` keyset pagination.
+It returns only normalized execution fields; it does not accept SQL, persist a cursor, calculate
+prices, resolve customer identity, or call the billing system. A dedicated ClickHouse user is
+limited to the required `sandbox_events` columns and a read-only resource-limited profile. The
+fixed query extracts only the execution and close-reason JSON fields and enforces row, byte,
+memory, thread, and execution-time limits. Request rate limiting runs after bearer authentication,
+so unauthenticated Internet traffic cannot consume the billing worker's query budget.
+
+The current bearer token is sourced from Azure Key Vault for both the Nomad job and the GKE
+handoff. Rotation temporarily configures the old value as `billing_gateway_previous_token`,
+updates the Key Vault current value, applies Terraform so Nomad reads the same current value, then
+updates GKE and removes the previous value after the rollout has converged.
+
 ### Docker reverse proxy (`packages/docker-reverse-proxy`)
 
 A Docker Registry v2 auth gateway (port 5000). Users `docker push` template base images with E2B
@@ -194,7 +214,7 @@ into the cloud artifact registry (`/v2/e2b/custom-envs/<templateID>` → project
 |---|---|---|
 | **PostgreSQL** | `packages/db` (goose migrations, sqlc) | Durable control-plane state: `teams`, `users`, `tiers` (quotas), `envs` (templates), `env_builds` (build rows: vcpu, ram_mb, status, versions), `env_aliases`, `snapshots` (paused sandboxes), `team_api_keys`, `access_tokens`, `volumes`, `clusters` |
 | **Redis** | API, client-proxy, orchestrator | Ephemeral runtime state: running-sandbox store (source of truth), sandbox→node routing catalog, team/template/snapshot caches, rate limiting, P2P chunk peer registry |
-| **ClickHouse** | `packages/clickhouse` | Time-series/analytics: `metrics_gauge`/`metrics_sum` (written by the OTel collector), `sandbox_events`, `sandbox_host_stats` (written by orchestrator), team metrics. Read by API and dashboard-api |
+| **ClickHouse** | `packages/clickhouse` | Time-series/analytics: `metrics_gauge`/`metrics_sum` (written by the OTel collector), `sandbox_events`, `sandbox_host_stats` (written by orchestrator), team metrics. Read by API, dashboard-api, and the fixed-query billing gateway |
 | **Object storage** (GCS/S3/local, `packages/shared/pkg/storage`) | orchestrator, template-manager | Template & snapshot artifacts, keyed by build ID: `{buildID}/memfile`, `{buildID}/rootfs.ext4`, `{buildID}/snapfile`, `{buildID}/metadata.json` + `.header` index files |
 | **Consul KV** | orchestrator | Network slot allocation across restarts |
 
@@ -309,7 +329,7 @@ fresh resume touches, producing prefetch hints that speed up future sandbox star
 
 ## Deployment topology
 
-Deployed with **Terraform** (`iac/provider-gcp/`, `iac/provider-aws/`) onto a **Nomad + Consul**
+Deployed with **Terraform** (`iac/provider-gcp/`, `iac/provider-aws/`, `iac/provider-azure/`) onto a **Nomad + Consul**
 cluster. Nomad job specs live in `iac/modules/job-*/jobs/*.hcl`.
 
 ```mermaid
@@ -320,7 +340,7 @@ flowchart TB
         NS["Nomad + Consul servers (control plane)"]
     end
     subgraph apipool["api pool"]
-        AJ["api, dashboard-api, client-proxy,<br/>ingress (Traefik), docker-reverse-proxy,<br/>redis, loki, otel-collector, autoscaler"]
+        AJ["api, dashboard-api, billing gateway,<br/>client-proxy, ingress (Traefik), docker-reverse-proxy,<br/>redis, loki, otel-collector, autoscaler"]
     end
     subgraph clientpool["default pool (autoscaled)"]
         OJ["orchestrator (system job, raw_exec)<br/>+ Firecracker sandboxes"]
@@ -359,6 +379,7 @@ packages/
   client-proxy/         Edge router for sandbox traffic
   envd/                 In-VM agent (bump pkg/version.go on behavior change!)
   dashboard-api/        Web-dashboard backend
+  billing/  Fixed-query ClickHouse terminal event API (Azure)
   docker-reverse-proxy/ Registry auth gateway for template images
   shared/               Protos, telemetry, storage clients, proxy engine, feature flags
   auth/                 AuthN library (API keys, JWT/OIDC) used by api + dashboard-api

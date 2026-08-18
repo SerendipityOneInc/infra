@@ -65,6 +65,11 @@ resource "random_password" "clickhouse_server_secret" {
   special = false
 }
 
+resource "random_password" "billing_clickhouse_password" {
+  length  = 32
+  special = false
+}
+
 resource "azurerm_key_vault_secret" "clickhouse" {
   name         = "${var.prefix}clickhouse"
   key_vault_id = azurerm_key_vault.main.id
@@ -72,6 +77,8 @@ resource "azurerm_key_vault_secret" "clickhouse" {
     CLICKHOUSE_USERNAME = "e2b",
     CLICKHOUSE_PASSWORD = random_password.clickhouse_password.result,
     SERVER_SECRET       = random_password.clickhouse_server_secret.result,
+    BILLING_USERNAME    = "billing_reader",
+    BILLING_PASSWORD    = random_password.billing_clickhouse_password.result,
   })
 
   depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
@@ -79,6 +86,34 @@ resource "azurerm_key_vault_secret" "clickhouse" {
   lifecycle {
     ignore_changes = [value]
   }
+}
+
+# Shared by the billing gateway and the GKE pull worker. Rotation accepts
+# the old token through BILLING_GATEWAY_PREVIOUS_TOKEN during rollout.
+resource "random_password" "billing_gateway_token" {
+  length  = 43
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "billing_gateway_token" {
+  name         = "${var.prefix}billing-gateway-token"
+  key_vault_id = azurerm_key_vault.main.id
+  value        = random_password.billing_gateway_token.result
+
+  depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# Read the effective vault value back so both the Nomad job and the GKE secret
+# handoff consume the same source of truth, including an out-of-band rotation.
+data "azurerm_key_vault_secret" "billing_gateway_token" {
+  name         = azurerm_key_vault_secret.billing_gateway_token.name
+  key_vault_id = azurerm_key_vault.main.id
+
+  depends_on = [azurerm_key_vault_secret.billing_gateway_token]
 }
 
 # ---

@@ -33,7 +33,7 @@ import (
 func createVolumeDir(t *testing.T, builder *chrooted.Builder, volumeType string, teamID, volumeID uuid.UUID) {
 	t.Helper()
 
-	fullVolumePath, err := builder.BuildVolumePath(volumeType, teamID, volumeID)
+	fullVolumePath, err := builder.BuildVolumePath(volumeType, teamID, volumeID, "")
 	require.NoError(t, err)
 
 	t.Logf("creating volume dir: %s", fullVolumePath)

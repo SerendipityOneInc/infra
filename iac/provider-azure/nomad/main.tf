@@ -235,6 +235,9 @@ module "clickhouse" {
   clickhouse_database = var.clickhouse_database
   clickhouse_username = var.clickhouse_username
   clickhouse_password = var.clickhouse_password
+  billing_username    = var.billing_clickhouse_username
+  billing_password    = var.billing_clickhouse_password
+  billing_enabled     = true
   clickhouse_port     = var.clickhouse_port
 
   clickhouse_metrics_port = var.clickhouse_metrics_port
@@ -337,4 +340,15 @@ module "dashboard_api" {
   image = "${var.acr_login_server}/${var.dashboard_api_repository_name}:${var.image_tag}"
 
   job_env_vars = var.dashboard_api_env_vars
+}
+
+module "billing" {
+  source = "../../modules/job-billing"
+  count  = var.billing_gateway_count > 0 ? 1 : 0
+
+  count_instances = var.billing_gateway_count
+  node_pool       = var.api_node_pool
+  update_stanza   = var.billing_gateway_count > 1
+  image           = "${var.acr_login_server}/${var.billing_gateway_repository_name}:${var.image_tag}"
+  job_env_vars    = var.billing_gateway_env_vars
 }

@@ -3,6 +3,7 @@ go 1.26.5
 use (
 	./packages/api
 	./packages/auth
+	./packages/billing
 	./packages/clickhouse
 	./packages/client-proxy
 	./packages/dashboard-api

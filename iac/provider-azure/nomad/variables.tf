@@ -287,6 +287,17 @@ variable "clickhouse_password" {
   sensitive = true
 }
 
+variable "billing_clickhouse_username" {
+  type    = string
+  default = "billing_reader"
+}
+
+variable "billing_clickhouse_password" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
 variable "clickhouse_server_secret" {
   type      = string
   default   = ""
@@ -378,6 +389,22 @@ variable "dashboard_api_repository_name" {
 }
 
 variable "dashboard_api_env_vars" {
+  type      = map(string)
+  default   = {}
+  sensitive = true
+}
+
+variable "billing_gateway_count" {
+  type    = number
+  default = 0
+}
+
+variable "billing_gateway_repository_name" {
+  type    = string
+  default = ""
+}
+
+variable "billing_gateway_env_vars" {
   type      = map(string)
   default   = {}
   sensitive = true

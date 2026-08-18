@@ -13,6 +13,30 @@
             <distributed_background_insert_batch>1</distributed_background_insert_batch>
             <distributed_background_insert_split_batch_on_failure>1</distributed_background_insert_split_batch_on_failure>
         </default>
+        <billing_reader>
+            <!-- readonly=2, not 1. Under readonly=1 ClickHouse rejects any
+                 SETTINGS on the query, and the Go driver always sends
+                 max_execution_time — every query dies with
+                 "Cannot modify 'max_execution_time' setting in readonly mode".
+                 readonly=2 still forbids writes and DDL; it only allows the
+                 session to set settings. The hard limits below are enforced
+                 either way because a query may lower them but not raise them. -->
+            <readonly>2</readonly>
+            <max_execution_time>5</max_execution_time>
+            <max_rows_to_read>1000000</max_rows_to_read>
+            <max_result_rows>1001</max_result_rows>
+            <max_threads>2</max_threads>
+            <max_bytes_to_read>67108864</max_bytes_to_read>
+            <max_result_bytes>67108864</max_result_bytes>
+            <max_memory_usage>134217728</max_memory_usage>
+            <!-- ClickHouse 25.4 lazy materialization breaks reads through the
+                 Distributed table: the same column arrives as both String and
+                 Lazy(String), and the query dies with
+                 "Block structure mismatch ... (AMBIGUOUS_COLUMN_NAME)".
+                 It has to live in the profile — readonly=1 refuses SETTINGS on
+                 the query itself. -->
+            <query_plan_optimize_lazy_materialization>0</query_plan_optimize_lazy_materialization>
+        </billing_reader>
     </profiles>
 
     <users>
@@ -28,5 +52,25 @@
             <quota>default</quota>
             <access_management>1</access_management>
         </${username}>
+%{ if billing_enabled ~}
+        <${billing_username}>
+            <password>${billing_password}</password>
+            <networks>
+                <ip>172.26.64.0/20</ip>
+                <ip>10.0.0.0/8</ip>
+            </networks>
+            <profile>billing_reader</profile>
+            <quota>default</quota>
+            <access_management>0</access_management>
+            <grants>
+                <!-- sandbox_events is Distributed; reads are pushed down to the
+                     MergeTree behind it, so the grant on the distributed table
+                     alone yields "Not enough privileges ... on
+                     <db>.sandbox_events_local". Both are required. -->
+                <query>GRANT SELECT(id, version, type, timestamp, sandbox_id, sandbox_execution_id, sandbox_template_id, sandbox_build_id, sandbox_team_id, event_data) ON ${database}.sandbox_events</query>
+                <query>GRANT SELECT(id, version, type, timestamp, sandbox_id, sandbox_execution_id, sandbox_template_id, sandbox_build_id, sandbox_team_id, event_data) ON ${database}.sandbox_events_local</query>
+            </grants>
+        </${billing_username}>
+%{ endif ~}
     </users>
 </clickhouse>

@@ -28,24 +28,40 @@ jobs:
     if: ${{ inputs.run-check == true }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Check auto-fix credentials
+        id: autofix-credentials
+        env:
+          APP_ID: ${{ secrets.app_id }}
+          APP_SECRET: ${{ secrets.app_secret }}
+        run: |
+          if [[ -n "$APP_ID" && -n "$APP_SECRET" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Generate GitHub App installation token
         id: app-token
-        if: ${{ inputs.commit == true }}
+        if: ${{ inputs.commit == true && steps.autofix-credentials.outputs.available == 'true' }}
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.app_id }}
           private-key: ${{ secrets.app_secret }}
 
-      - name: Checkout repository
+      - name: Checkout repository with auto-fix credentials
         uses: actions/checkout@v6
-        if: ${{ inputs.commit == true }}
+        if: ${{ steps.app-token.outputs.token != '' }}
         with:
           ref: ${{ github.head_ref }}
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Checkout repository
         uses: actions/checkout@v6
-        if: ${{ inputs.commit == false }}
+        if: ${{ steps.app-token.outputs.token == '' }}
+
+      - name: Report unavailable auto-fix credentials
+        if: ${{ inputs.commit == true && steps.app-token.outputs.token == '' }}
+        run: echo "GitHub App credentials are not configured; generated-code validation will run without auto-commit."
 
       - name: Parse .tool-versions
         uses: wistia/parse-tool-versions@v2.1.1
@@ -73,12 +89,24 @@ jobs:
       - name: Format code
         run: make fmt
 
+      - name: Capture generated diff without auto-fix credentials
+        if: ${{ inputs.commit == true && steps.app-token.outputs.token == '' }}
+        run: git diff --binary --output="${RUNNER_TEMP}/generated-changes.patch"
+
+      - name: Upload generated diff without auto-fix credentials
+        if: ${{ inputs.commit == true && steps.app-token.outputs.token == '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: generated-changes-patch
+          path: ${{ runner.temp }}/generated-changes.patch
+          retention-days: 1
+
       - name: Commit generated changes if any
         # head_ref is attacker-controlled (PR branch name); pass via env to avoid
         # shell injection in the inline script.
         env:
           HEAD_REF: ${{ github.head_ref }}
-          COMMIT: ${{ inputs.commit }}
+          COMMIT: ${{ inputs.commit == true && steps.app-token.outputs.token != '' }}
         run: |
           if [[ -z $(git status --porcelain) ]]; then
             echo "✅ No changes detected."

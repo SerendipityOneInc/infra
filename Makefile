@@ -79,6 +79,9 @@ build-and-upload:build-and-upload/dashboard-api
 build-and-upload:build-and-upload/docker-reverse-proxy
 build-and-upload:build-and-upload/clean-nfs-cache
 build-and-upload:build-and-upload/orchestrator
+ifeq ($(PROVIDER),azure)
+build-and-upload:build-and-upload/billing
+endif
 build-and-upload:build-and-upload/template-manager
 build-and-upload:build-and-upload/envd
 build-and-upload:build-and-upload/clickhouse-migrator
