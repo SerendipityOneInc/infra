@@ -170,8 +170,16 @@ EOH
 udevadm control --reload-rules
 udevadm trigger
 
-# Load the nbd module with 4096 devices
+# Load the nbd module with 4096 devices.
+#
+# Persist it too. This script is cloud-init: it runs once, at first boot. On any
+# later reboot the kernel autoloads nbd *without* nbds_max, which creates no
+# usable devices at all — and then template-manager crash-loops on
+# "[nbd pool]: failed to create network: no free slots", so every template build
+# fails at finalize with an opaque "An internal error occurred".
 modprobe nbd nbds_max=4096
+echo "nbd" > /etc/modules-load.d/nbd.conf
+echo "options nbd nbds_max=4096" > /etc/modprobe.d/nbd.conf
 
 # Create the directory for the fc mounts
 mkdir -p /fc-vm
