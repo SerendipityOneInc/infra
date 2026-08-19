@@ -87,6 +87,29 @@ func TestParse(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, config.DisableStartupReclaim)
 	})
+
+	t.Run("build cache memory watermark defaults to disabled", func(t *testing.T) {
+		config, err := Parse()
+		require.NoError(t, err)
+
+		assert.Zero(t, config.BuildCacheMemoryHighWatermarkPercentage)
+	})
+
+	t.Run("build cache memory watermark accepts a percentage", func(t *testing.T) {
+		t.Setenv("BUILD_CACHE_MEMORY_HIGH_WATERMARK_PERCENTAGE", "75")
+
+		config, err := Parse()
+		require.NoError(t, err)
+
+		assert.Equal(t, 75, config.BuildCacheMemoryHighWatermarkPercentage)
+	})
+
+	t.Run("build cache memory watermark rejects 100 percent", func(t *testing.T) {
+		t.Setenv("BUILD_CACHE_MEMORY_HIGH_WATERMARK_PERCENTAGE", "100")
+
+		_, err := Parse()
+		require.ErrorContains(t, err, "must be 0 (disabled) or between 1 and 99")
+	})
 }
 
 func TestAdditionalClickhouseEndpoints(t *testing.T) {

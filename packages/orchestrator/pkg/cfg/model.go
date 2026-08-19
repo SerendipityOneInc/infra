@@ -21,16 +21,17 @@ import (
 const DefaultBusyboxVersion = "1.36.1"
 
 type BuilderConfig struct {
-	DomainName             string `env:"DOMAIN_NAME"              envDefault:""`
-	FirecrackerVersionsDir string `env:"FIRECRACKER_VERSIONS_DIR" envDefault:"/fc-versions"`
-	BusyboxVersion         string `env:"BUSYBOX_VERSION"          envDefault:"1.36.1"`
-	HostBusyboxDir         string `env:"HOST_BUSYBOX_DIR"         envDefault:"/fc-busybox"`
-	HostEnvdPath           string `env:"HOST_ENVD_PATH"           envDefault:"/fc-envd/envd"`
-	HostKernelsDir         string `env:"HOST_KERNELS_DIR"         envDefault:"/fc-kernels"`
-	OrchestratorBaseDir    string `env:"ORCHESTRATOR_BASE_PATH"   envDefault:"/orchestrator"`
-	SandboxDir             string `env:"SANDBOX_DIR"              envDefault:"/fc-vm"`
-	SharedChunkCacheDir    string `env:"SHARED_CHUNK_CACHE_PATH"`
-	TemplatesDir           string `env:"TEMPLATES_DIR,expand"     envDefault:"${ORCHESTRATOR_BASE_PATH}/build-templates"`
+	DomainName                              string `env:"DOMAIN_NAME"              envDefault:""`
+	FirecrackerVersionsDir                  string `env:"FIRECRACKER_VERSIONS_DIR" envDefault:"/fc-versions"`
+	BusyboxVersion                          string `env:"BUSYBOX_VERSION"          envDefault:"1.36.1"`
+	HostBusyboxDir                          string `env:"HOST_BUSYBOX_DIR"         envDefault:"/fc-busybox"`
+	HostEnvdPath                            string `env:"HOST_ENVD_PATH"           envDefault:"/fc-envd/envd"`
+	HostKernelsDir                          string `env:"HOST_KERNELS_DIR"         envDefault:"/fc-kernels"`
+	OrchestratorBaseDir                     string `env:"ORCHESTRATOR_BASE_PATH"   envDefault:"/orchestrator"`
+	SandboxDir                              string `env:"SANDBOX_DIR"              envDefault:"/fc-vm"`
+	SharedChunkCacheDir                     string `env:"SHARED_CHUNK_CACHE_PATH"`
+	TemplatesDir                            string `env:"TEMPLATES_DIR,expand"     envDefault:"${ORCHESTRATOR_BASE_PATH}/build-templates"`
+	BuildCacheMemoryHighWatermarkPercentage int    `env:"BUILD_CACHE_MEMORY_HIGH_WATERMARK_PERCENTAGE" envDefault:"0"`
 
 	DefaultCacheDir string `env:"DEFAULT_CACHE_DIR,expand" envDefault:"${ORCHESTRATOR_BASE_PATH}/build"`
 
@@ -38,6 +39,15 @@ type BuilderConfig struct {
 
 	StorageConfig storage.Config
 	NetworkConfig network.Config
+}
+
+func (c BuilderConfig) validate() error {
+	percentage := c.BuildCacheMemoryHighWatermarkPercentage
+	if percentage < 0 || percentage >= 100 {
+		return fmt.Errorf("BUILD_CACHE_MEMORY_HIGH_WATERMARK_PERCENTAGE must be 0 (disabled) or between 1 and 99, got %d", percentage)
+	}
+
+	return nil
 }
 
 func makePathsAbsolute(c *BuilderConfig) error {
@@ -164,6 +174,9 @@ func Parse() (Config, error) {
 	}
 
 	config.BuilderConfig = bc
+	if err = config.BuilderConfig.validate(); err != nil {
+		return config, err
+	}
 
 	if err = config.BuilderConfig.NetworkConfig.Validate(); err != nil {
 		return config, err
@@ -195,6 +208,9 @@ func ParseBuilder() (BuilderConfig, error) {
 	}
 
 	if err = makePathsAbsolute(&model); err != nil {
+		return BuilderConfig{}, err
+	}
+	if err = model.validate(); err != nil {
 		return BuilderConfig{}, err
 	}
 

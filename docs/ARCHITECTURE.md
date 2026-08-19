@@ -327,6 +327,14 @@ steps. Resize disk grows the quiescent rootfs on the host; the other non-cached 
 Firecracker VM and their pause-diffs become layers. The optimize phase records which memory pages a
 fresh resume touches, producing prefetch hints that speed up future sandbox starts.
 
+Build-layer diffs are memory-mapped and therefore charged to the template-manager task cgroup as
+file-backed memory. Disk-pressure eviction remains the default cache policy. Deployments that set
+`BUILD_CACHE_MEMORY_HIGH_WATERMARK_PERCENTAGE` also evict the oldest inactive diffs when projected
+cgroup usage crosses that percentage; pending delayed deletions count as projected headroom, while
+cache hits cancel deletion so in-use mappings are not closed. The Azure deployment enables this at
+75% and stores the cgroup current/max/anon/file/shmem gauges in the ClickHouse infra metrics tables
+for its Grafana dashboard and sustained-pressure alert.
+
 ## Deployment topology
 
 Deployed with **Terraform** (`iac/provider-gcp/`, `iac/provider-aws/`, `iac/provider-azure/`) onto a **Nomad + Consul**
