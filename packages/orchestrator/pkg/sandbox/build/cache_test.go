@@ -279,6 +279,60 @@ func TestDiffStoreDelayEvictionAbort(t *testing.T) { //nolint:paralleltest // ve
 	assert.True(t, found)
 }
 
+func TestDiffStoreSchedulesEvictionUnderCgroupMemoryPressure(t *testing.T) { //nolint:paralleltest // starts the eviction loop
+	cachePath := t.TempDir()
+
+	c, err := cfg.Parse()
+	require.NoError(t, err)
+	c.BuildCacheMemoryHighWatermarkPercentage = 50
+
+	store, err := NewDiffStore(
+		c,
+		flagsWithMaxBuildCachePercentage(t, 100),
+		cachePath,
+		time.Hour,
+		time.Hour,
+	)
+	require.NoError(t, err)
+	store.cgroupMemory = func() (cgroupMemoryStats, error) {
+		return cgroupMemoryStats{Current: 1800, Max: 2048, File: 1500}, nil
+	}
+
+	diff := newRootFSDiff(t, cachePath, "memory-pressure-build")
+	store.Add(diff)
+	store.Start(t.Context())
+	t.Cleanup(store.Close)
+
+	require.Eventually(t, func() bool {
+		return store.isBeingDeleted(diff.CacheKey())
+	}, 3*time.Second, 10*time.Millisecond)
+}
+
+func TestMemoryPressureExceeded(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		stats              cgroupMemoryStats
+		pendingDeleteBytes int64
+		threshold          int
+		want               bool
+	}{
+		{name: "above watermark", stats: cgroupMemoryStats{Current: 80, Max: 100}, threshold: 75, want: true},
+		{name: "at watermark", stats: cgroupMemoryStats{Current: 75, Max: 100}, threshold: 75, want: false},
+		{name: "pending deletion creates projected headroom", stats: cgroupMemoryStats{Current: 90, Max: 100}, pendingDeleteBytes: 20, threshold: 75, want: false},
+		{name: "unbounded cgroup", stats: cgroupMemoryStats{Current: 90}, threshold: 75, want: false},
+		{name: "disabled", stats: cgroupMemoryStats{Current: 90, Max: 100}, threshold: 0, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, memoryPressureExceeded(tt.stats, tt.pendingDeleteBytes, tt.threshold))
+		})
+	}
+}
+
 func TestDiffStoreOldestFromCache(t *testing.T) {
 	t.Parallel()
 	cachePath := t.TempDir()

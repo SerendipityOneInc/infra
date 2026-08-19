@@ -59,6 +59,7 @@ job "grafana" {
         volumes = [
           "local/provisioning/datasources:/etc/grafana/provisioning/datasources",
           "local/provisioning/dashboards:/etc/grafana/provisioning/dashboards",
+          "local/provisioning/alerting:/etc/grafana/provisioning/alerting",
           "local/dashboards:/var/lib/grafana/dashboards",
         ]
       }
@@ -128,6 +129,79 @@ providers:
     type: file
     options:
       path: /var/lib/grafana/dashboards
+EOT
+      }
+
+      template {
+        destination = "local/provisioning/alerting/template-manager-memory.yaml"
+        data        = <<EOT
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Template manager
+    folder: E2B
+    interval: 1m
+    rules:
+      - uid: template-manager-memory-pressure
+        title: Template manager memory pressure
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: clickhouse
+            model:
+              datasource:
+                type: grafana-clickhouse-datasource
+                uid: clickhouse
+              editorType: sql
+              format: 1
+              intervalMs: 15000
+              maxDataPoints: 600
+              queryType: timeseries
+              rawSql: "SELECT toStartOfMinute(TimeUnix) AS time, maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.current') / nullIf(maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.max'), 0) * 100 AS memory_pct FROM otel_metrics_gauge WHERE MetricName IN ('e2b.infra.build_cache.cgroup.memory.current', 'e2b.infra.build_cache.cgroup.memory.max') AND TimeUnix > now() - INTERVAL 10 MINUTE GROUP BY time HAVING maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.max') > 0 ORDER BY time"
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [85]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          description: "The template-manager cgroup has remained above 85% after cache eviction should have started at 75%. New builds are at risk of mmap memfd allocation failures."
+          summary: "Template-manager memory reclaim is not restoring headroom"
+        labels:
+          service: template-manager
+          severity: warning
 EOT
       }
 
@@ -266,6 +340,74 @@ EOT
      },
      "editorType": "sql", "queryType": "timeseries",
      "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(Attributes['host'], ' ', Attributes['disk']) AS disk, avg(Value)/1073741824 AS avail_gib FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_disk_available' AND $__timeFilter(TimeUnix) GROUP BY time, disk ORDER BY time",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Template-manager cgroup memory (%)",
+   "description": "Build-cache eviction starts at 75%. The alert fires after usage remains above 85% for 10 minutes.",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 18
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "min": 0,
+     "max": 100,
+     "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 75 }, { "color": "red", "value": 85 } ] }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.current') / nullIf(maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.max'), 0) * 100 AS memory_pct FROM otel_metrics_gauge WHERE MetricName IN ('e2b.infra.build_cache.cgroup.memory.current', 'e2b.infra.build_cache.cgroup.memory.max') AND $__timeFilter(TimeUnix) GROUP BY time HAVING maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.max') > 0 ORDER BY time",
+     "format": 1,
+     "pluginVersion": "4.20.0"
+    }
+   ]
+  },
+  {
+   "title": "Template-manager cgroup memory breakdown (GiB)",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 18
+   },
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": { "unit": "gbytes" },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql", "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, replaceOne(MetricName, 'e2b.infra.build_cache.cgroup.memory.', '') AS kind, max(Value)/1073741824 AS used_gib FROM otel_metrics_gauge WHERE startsWith(MetricName, 'e2b.infra.build_cache.cgroup.memory.') AND MetricName != 'e2b.infra.build_cache.cgroup.memory.max' AND $__timeFilter(TimeUnix) GROUP BY time, kind ORDER BY time",
      "format": 1,
      "pluginVersion": "4.20.0"
     }
