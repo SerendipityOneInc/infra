@@ -383,7 +383,6 @@ func (s *DiffStore) registerMemoryMetrics() error {
 
 		return nil
 	}, currentGauge, maxGauge, anonGauge, fileGauge, shmemGauge, pendingGauge)
-
 	if err != nil {
 		return err
 	}

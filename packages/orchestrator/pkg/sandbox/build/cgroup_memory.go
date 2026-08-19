@@ -4,6 +4,7 @@ package build
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,7 +50,7 @@ func readCgroupMemory(procCgroupPath, cgroupRoot string) (cgroupMemoryStats, err
 		return cgroupMemoryStats{}, fmt.Errorf("read cgroup membership: %w", err)
 	}
 	if relativePath == "" {
-		return cgroupMemoryStats{}, fmt.Errorf("cgroup v2 membership not found")
+		return cgroupMemoryStats{}, errors.New("cgroup v2 membership not found")
 	}
 
 	// Prefix with a slash before cleaning so paths containing ".." cannot
@@ -70,12 +71,12 @@ func readCgroupMemory(procCgroupPath, cgroupRoot string) (cgroupMemoryStats, err
 	if maxText == "max" {
 		return cgroupMemoryStats{Current: current}, nil
 	}
-	max, err := strconv.ParseInt(maxText, 10, 64)
+	maxBytes, err := strconv.ParseInt(maxText, 10, 64)
 	if err != nil {
 		return cgroupMemoryStats{}, fmt.Errorf("parse memory.max %q: %w", maxText, err)
 	}
 
-	stats := cgroupMemoryStats{Current: current, Max: max}
+	stats := cgroupMemoryStats{Current: current, Max: maxBytes}
 	statFile, err := os.Open(filepath.Join(memoryPath, "memory.stat"))
 	if err != nil {
 		return cgroupMemoryStats{}, fmt.Errorf("open memory.stat: %w", err)
