@@ -322,6 +322,16 @@ resource "nomad_job" "grafana" {
     clickhouse_password = var.clickhouse_password
     pg_host             = var.grafana_pg_host
     pg_ro_password      = var.grafana_pg_readonly_password
+
+    azure_monitor_client_id       = var.grafana_azure_monitor_client_id
+    azure_monitor_client_secret   = var.grafana_azure_monitor_client_secret
+    azure_monitor_tenant_id       = var.grafana_azure_monitor_tenant_id
+    azure_monitor_subscription_id = var.grafana_azure_monitor_subscription_id
+    azure_monitor_resource_group  = var.grafana_azure_monitor_resource_group
+    # Matches SLOTS_NODE_PREFIX / SLOTS_VMSS_RESOURCE_ID in the
+    # slots-metrics-publisher job. Client pool only -- SlotsUsedPct is not
+    # published for the build pool (it scales on plain CPU today).
+    client_vmss_name = "e2b-orch-client"
   })
 }
 
