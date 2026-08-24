@@ -206,6 +206,168 @@ EOT
       }
 
       template {
+        destination = "local/provisioning/alerting/sandbox-healthcheck-failures.yaml"
+        data        = <<EOT
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Sandbox failures
+    folder: E2B
+    interval: 1m
+    rules:
+      - uid: sandbox-healthcheck-failures
+        title: Sandbox healthcheck failures
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              datasource:
+                type: loki
+                uid: loki
+              editorMode: code
+              expr: "count_over_time({service=\"orchestrator\"} | json | level=\"error\" |= \"healthcheck started failing\" [5m])"
+              queryType: range
+              intervalMs: 15000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          description: "orchestrator logged at least one 'Sandbox healthcheck started failing' error in the last 5 minutes. 30-day baseline is ~5 occurrences total, so even a single hit is worth paging on."
+          summary: "Sandbox(es) failing health checks"
+        labels:
+          service: orchestrator
+          severity: critical
+EOT
+      }
+
+      template {
+        destination = "local/provisioning/alerting/template-build-failure-rate.yaml"
+        data        = <<EOT
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Template build failures
+    folder: E2B
+    interval: 1m
+    rules:
+      - uid: template-build-failure-rate
+        title: Template build failure rate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: e2bpg
+            model:
+              datasource:
+                type: grafana-postgresql-datasource
+                uid: e2bpg
+              editorMode: code
+              rawQuery: true
+              rawSql: "SELECT count(*) AS value FROM env_builds WHERE status_group = 'failed' AND finished_at > now() - interval '5 minutes'"
+              format: table
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [1]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          description: "At least 2 template builds failed (env_builds.status_group = 'failed') in the last 5 minutes. 30-day baseline is 20/382 (~5.2%) at low volume, so 2+ in one window is anomalous clustering."
+          summary: "Template build failures clustering"
+        labels:
+          service: template-manager
+          severity: critical
+EOT
+      }
+
+      template {
+        destination = "local/provisioning/alerting/notification-policies.yaml"
+        data        = <<EOT
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: grafana-default-email
+    group_by: ["grafana_folder", "alertname"]
+    routes:
+      - receiver: PagerDuty
+        object_matchers:
+          - ["severity", "=", "critical"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        continue: false
+EOT
+      }
+
+      template {
         destination = "local/dashboards/cluster-nodes.json"
         left_delimiter  = "[["
         right_delimiter = "]]"
