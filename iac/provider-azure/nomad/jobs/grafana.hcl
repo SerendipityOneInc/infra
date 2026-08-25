@@ -115,6 +115,19 @@ datasources:
       maxOpenConns: 4
     secureJsonData:
       password: ${pg_ro_password}
+  - name: Azure Monitor
+    type: grafana-azure-monitor-datasource
+    uid: azuremonitor
+    access: proxy
+    editable: false
+    jsonData:
+      azureAuthType: clientsecret
+      tenantId: ${azure_monitor_tenant_id}
+      clientId: ${azure_monitor_client_id}
+      subscriptionId: ${azure_monitor_subscription_id}
+      cloudName: azuremonitor
+    secureJsonData:
+      clientSecret: ${azure_monitor_client_secret}
 EOT
       }
 
@@ -202,6 +215,515 @@ groups:
         labels:
           service: template-manager
           severity: warning
+EOT
+      }
+
+      template {
+        destination = "local/provisioning/alerting/sandbox-healthcheck-failures.yaml"
+        data        = <<EOT
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Sandbox failures
+    folder: E2B
+    interval: 1m
+    rules:
+      - uid: sandbox-healthcheck-failures
+        title: Sandbox healthcheck failures
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              datasource:
+                type: loki
+                uid: loki
+              editorMode: code
+              expr: "count_over_time({service=\"orchestrator\"} | json | level=\"error\" |= \"healthcheck started failing\" [5m])"
+              queryType: range
+              intervalMs: 15000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [0]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          description: "orchestrator logged at least one 'Sandbox healthcheck started failing' error in the last 5 minutes. 30-day baseline is ~5 occurrences total, so even a single hit is worth paging on."
+          summary: "Sandbox(es) failing health checks"
+        labels:
+          service: orchestrator
+          severity: critical
+EOT
+      }
+
+      template {
+        destination = "local/provisioning/alerting/template-build-failure-rate.yaml"
+        data        = <<EOT
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Template build failures
+    folder: E2B
+    interval: 1m
+    rules:
+      - uid: template-build-failure-rate
+        title: Template build failure rate
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: e2bpg
+            model:
+              datasource:
+                type: grafana-postgresql-datasource
+                uid: e2bpg
+              editorMode: code
+              rawQuery: true
+              rawSql: "SELECT count(*) AS value FROM env_builds WHERE status_group = 'failed' AND finished_at > now() - interval '5 minutes'"
+              format: table
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [1]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          description: "At least 2 template builds failed (env_builds.status_group = 'failed') in the last 5 minutes. 30-day baseline is 20/382 (~5.2%) at low volume, so 2+ in one window is anomalous clustering."
+          summary: "Template build failures clustering"
+        labels:
+          service: template-manager
+          severity: critical
+EOT
+      }
+
+      template {
+        destination = "local/provisioning/alerting/notification-policies.yaml"
+        data        = <<EOT
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: grafana-default-email
+    group_by: ["grafana_folder", "alertname"]
+    routes:
+      - receiver: PagerDuty
+        object_matchers:
+          - ["severity", "=", "critical"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        continue: false
+EOT
+      }
+
+      template {
+        destination = "local/provisioning/alerting/node-resource-pressure.yaml"
+        data        = <<EOT
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Node resource pressure
+    folder: E2B
+    interval: 1m
+    rules:
+      - uid: node-cpu-pressure
+        title: Node CPU pressure
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: clickhouse
+            model:
+              datasource:
+                type: grafana-clickhouse-datasource
+                uid: clickhouse
+              editorType: sql
+              format: 1
+              intervalMs: 15000
+              maxDataPoints: 600
+              queryType: timeseries
+              rawSql: "SELECT time, min(idle_pct) AS worst_idle_pct FROM (SELECT toStartOfMinute(TimeUnix) AS time, Attributes['host'] AS host, avg(Value) AS idle_pct FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_cpu_idle' AND TimeUnix > now() - INTERVAL 10 MINUTE GROUP BY time, host) GROUP BY time ORDER BY time"
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [15]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          description: "The worst client-pool node's CPU idle has stayed below 15% (i.e. busy above 85%) for 10 minutes. Check the E2B Cluster Nodes dashboard for which host."
+          summary: "A node's CPU usage is above 85%"
+        labels:
+          service: orchestrator
+          severity: warning
+
+      - uid: node-memory-pressure
+        title: Node memory pressure
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: clickhouse
+            model:
+              datasource:
+                type: grafana-clickhouse-datasource
+                uid: clickhouse
+              editorType: sql
+              format: 1
+              intervalMs: 15000
+              maxDataPoints: 600
+              queryType: timeseries
+              rawSql: "SELECT time, min(available_pct) AS worst_available_pct FROM (SELECT toStartOfMinute(TimeUnix) AS time, Attributes['host'] AS host, avgIf(Value, MetricName = 'nomad_client_host_memory_available') / nullIf(avgIf(Value, MetricName = 'nomad_client_host_memory_total'), 0) * 100 AS available_pct FROM otel_metrics_gauge WHERE MetricName IN ('nomad_client_host_memory_available', 'nomad_client_host_memory_total') AND TimeUnix > now() - INTERVAL 10 MINUTE GROUP BY time, host HAVING avgIf(Value, MetricName = 'nomad_client_host_memory_total') > 0) GROUP BY time ORDER BY time"
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [15]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          description: "The worst client-pool node's available memory has stayed below 15% of total (i.e. used above 85%) for 10 minutes. Check the E2B Cluster Nodes dashboard for which host."
+          summary: "A node's memory usage is above 85%"
+        labels:
+          service: orchestrator
+          severity: warning
+
+      - uid: node-disk-pressure
+        title: Node disk pressure
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: clickhouse
+            model:
+              datasource:
+                type: grafana-clickhouse-datasource
+                uid: clickhouse
+              editorType: sql
+              format: 1
+              intervalMs: 15000
+              maxDataPoints: 600
+              queryType: timeseries
+              rawSql: "SELECT time, min(available_pct) AS worst_available_pct FROM (SELECT toStartOfMinute(TimeUnix) AS time, concat(Attributes['host'], ' ', Attributes['disk']) AS disk, avgIf(Value, MetricName = 'nomad_client_host_disk_available') / nullIf(avgIf(Value, MetricName = 'nomad_client_host_disk_size'), 0) * 100 AS available_pct FROM otel_metrics_gauge WHERE MetricName IN ('nomad_client_host_disk_available', 'nomad_client_host_disk_size') AND TimeUnix > now() - INTERVAL 10 MINUTE AND Attributes['disk'] NOT LIKE '%loop%' GROUP BY time, disk HAVING avgIf(Value, MetricName = 'nomad_client_host_disk_size') > 0) GROUP BY time ORDER BY time"
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [15]
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          description: "The worst client-pool disk's available space has stayed below 15% of size (i.e. used above 85%) for 10 minutes. Loop devices (/dev/loop*, squashfs/snap mounts) are excluded -- they read as permanently 0% available and are not real capacity. Check the E2B Cluster Nodes dashboard for which host/disk."
+          summary: "A disk's usage is above 85%"
+        labels:
+          service: orchestrator
+          severity: warning
+EOT
+      }
+
+      template {
+        destination = "local/provisioning/alerting/team-concurrency-pressure.yaml"
+        data        = <<EOT
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Team concurrency pressure
+    folder: E2B
+    interval: 1m
+    rules:
+      - uid: team-concurrency-pressure
+        title: Team sandbox concurrency pressure
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: clickhouse
+            model:
+              datasource:
+                type: grafana-clickhouse-datasource
+                uid: clickhouse
+              editorType: sql
+              format: 1
+              intervalMs: 15000
+              maxDataPoints: 600
+              queryType: timeseries
+              rawSql: "SELECT time, max(concurrency_pct) AS worst_concurrency_pct FROM (SELECT toStartOfMinute(timestamp) AS time, team_id, avg(value) / 300 * 100 AS concurrency_pct FROM team_metrics_gauge WHERE metric_name = 'e2b.team.sandbox.running' AND timestamp > now() - INTERVAL 10 MINUTE GROUP BY time, team_id) GROUP BY time ORDER BY time"
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [85]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          description: "The busiest team's live sandbox count has stayed above 85% of the tiers.concurrent_instances cap (300) for 10 minutes -- they are close to being rate-limited and the tier likely needs review. Check the E2B Tenants dashboard for which team."
+          summary: "A team is approaching its concurrent sandbox limit"
+        labels:
+          service: api
+          severity: warning
+EOT
+      }
+
+      template {
+        destination = "local/provisioning/alerting/client-pool-capacity.yaml"
+        data        = <<EOT
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Client pool capacity
+    folder: E2B
+    interval: 1m
+    rules:
+      - uid: client-pool-capacity-ceiling
+        title: Client pool sustained near capacity
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: azuremonitor
+            model:
+              datasource:
+                type: grafana-azure-monitor-datasource
+                uid: azuremonitor
+              queryType: Azure Monitor
+              subscription: ${azure_monitor_subscription_id}
+              azureMonitor:
+                metricNamespace: e2b
+                metricName: SlotsUsedPct
+                aggregation: Maximum
+                timeGrain: PT1M
+                region: centralus
+              resources:
+                - subscription: ${azure_monitor_subscription_id}
+                  resourceGroup: ${azure_monitor_resource_group}
+                  resourceName: ${client_vmss_name}
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: [90]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [C]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: threshold
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        annotations:
+          description: "Pool-wide max SlotsUsedPct has stayed above 90% for 15 minutes -- longer than the 5m scale-out cooldown, so autoscale either cannot add capacity (VMSS already at its max instance count) or is not keeping up. New sandbox placements are at risk of failing."
+          summary: "Client pool sustained near/at capacity, autoscale may not be keeping up"
+        labels:
+          service: orchestrator
+          severity: critical
 EOT
       }
 

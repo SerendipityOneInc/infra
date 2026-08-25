@@ -72,6 +72,34 @@ resource "azurerm_resource_group" "main" {
   tags = var.tags
 }
 
+# Read-only credential Grafana uses to query custom metrics (SlotsUsedPct,
+# SandboxesRunning) that slots-metrics-publisher pushes straight to Azure
+# Monitor -- those never flow through ClickHouse, so this is the only way to
+# alert on client-pool capacity ceilings from Grafana.
+resource "azuread_application" "grafana_azure_monitor" {
+  display_name = "${var.prefix}${var.environment}-grafana-azure-monitor"
+}
+
+resource "azuread_application_password" "grafana_azure_monitor" {
+  application_id = azuread_application.grafana_azure_monitor.id
+}
+
+resource "azuread_service_principal" "grafana_azure_monitor" {
+  client_id = azuread_application.grafana_azure_monitor.client_id
+}
+
+resource "azurerm_role_assignment" "grafana_azure_monitor_reader" {
+  # Custom-metric reads with a dimension filter (client-pool NodeName
+  # breakdown) go through an Azure Monitor API path that checks
+  # Microsoft.Insights/metrics/read at subscription scope even though the
+  # resource itself lives in one resource group -- confirmed by a live 403
+  # naming the subscription as the required scope. Resource-group scope is
+  # not enough for that query shape.
+  scope                = "/subscriptions/${var.subscription_id}"
+  role_definition_name = "Monitoring Reader"
+  principal_id         = azuread_service_principal.grafana_azure_monitor.object_id
+}
+
 module "init" {
   source = "./init"
 
@@ -725,6 +753,13 @@ module "nomad" {
   # Tenants dashboard reads team/template metadata straight from PG (grafana_ro).
   grafana_pg_host              = regex("@([^:/?]+)", module.init.postgres_connection_string)[0]
   grafana_pg_readonly_password = module.init.grafana_pg_readonly_password
+
+  # Azure Monitor datasource (client-pool capacity alerting -- see SP above).
+  grafana_azure_monitor_client_id       = azuread_application.grafana_azure_monitor.client_id
+  grafana_azure_monitor_client_secret   = azuread_application_password.grafana_azure_monitor.value
+  grafana_azure_monitor_tenant_id       = var.tenant_id
+  grafana_azure_monitor_subscription_id = var.subscription_id
+  grafana_azure_monitor_resource_group  = azurerm_resource_group.main.name
 
   # Dashboard API (platform-managed provisioning).
   dashboard_api_count           = var.dashboard_api_count

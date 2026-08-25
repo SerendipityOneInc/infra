@@ -421,6 +421,32 @@ variable "grafana_pg_readonly_password" {
   sensitive = true
 }
 
+variable "grafana_azure_monitor_client_id" {
+  type    = string
+  default = ""
+}
+
+variable "grafana_azure_monitor_client_secret" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
+
+variable "grafana_azure_monitor_tenant_id" {
+  type    = string
+  default = ""
+}
+
+variable "grafana_azure_monitor_subscription_id" {
+  type    = string
+  default = ""
+}
+
+variable "grafana_azure_monitor_resource_group" {
+  type    = string
+  default = ""
+}
+
 # ---
 # Slot-utilisation publisher. Feeds the client pool's autoscale rule a metric
 # that reflects the limits which actually bind (sandbox count cap, hugepage
