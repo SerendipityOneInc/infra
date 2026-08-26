@@ -219,8 +219,15 @@ EOT
       }
 
       template {
-        destination = "local/provisioning/alerting/sandbox-healthcheck-failures.yaml"
-        data        = <<EOT
+        destination     = "local/provisioning/alerting/sandbox-healthcheck-failures.yaml"
+        # This file's annotations use Grafana's own {{ $labels.x }} Go-template
+        # syntax, which Nomad's template stanza would otherwise try to parse
+        # itself (and fail on, since `$labels` isn't a Nomad template
+        # variable). Swap delimiters so Nomad passes {{ }} through literally,
+        # same fix already used for the dashboard JSON blocks below.
+        left_delimiter  = "[["
+        right_delimiter = "]]"
+        data            = <<EOT
 apiVersion: 1
 groups:
   - orgId: 1
@@ -242,7 +249,12 @@ groups:
                 type: loki
                 uid: loki
               editorMode: code
-              expr: "count_over_time({service=\"orchestrator\"} | json | level=\"error\" |= \"healthcheck started failing\" [5m])"
+              # `keep` strips the noisy fields logs-collector/`| json` would
+              # otherwise carry into alert labels (buildID, trace_id, span_id,
+              # pid, ...) -- those made the PagerDuty/Feishu notification an
+              # unreadable wall of unlabeled values. sandboxID/teamID are the
+              # two worth keeping for triage.
+              expr: "count_over_time({service=\"orchestrator\"} | json | level=\"error\" |= \"healthcheck started failing\" | keep sandboxID, teamID [5m])"
               queryType: range
               intervalMs: 15000
               maxDataPoints: 43200
@@ -282,8 +294,8 @@ groups:
         execErrState: Error
         for: 0m
         annotations:
-          description: "orchestrator logged at least one 'Sandbox healthcheck started failing' error in the last 5 minutes. 30-day baseline is ~5 occurrences total, so even a single hit is worth paging on."
-          summary: "Sandbox(es) failing health checks"
+          description: "Sandbox {{ $labels.sandboxID }} (team {{ $labels.teamID }}) has failed its orchestrator healthcheck. 30-day baseline is ~5 occurrences total, so even a single hit is worth paging on."
+          summary: "Sandbox {{ $labels.sandboxID }} failing healthchecks"
         labels:
           service: orchestrator
           severity: critical
