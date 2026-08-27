@@ -1107,6 +1107,7 @@ const localUploadHMACDomain = "e2b-local-upload-v1\x00"
 func localUploadHMACKey(orchConfig cfg.Config) ([]byte, error) {
 	if configured := strings.TrimSpace(orchConfig.LocalUploadHMACKey); configured != "" {
 		digest := sha256.Sum256([]byte(localUploadHMACDomain + configured))
+
 		return digest[:], nil
 	}
 	if strings.TrimSpace(orchConfig.LocalUploadBaseURL) != "" {
@@ -1117,6 +1118,7 @@ func localUploadHMACKey(orchConfig cfg.Config) ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generate HMAC key: %w", err)
 	}
+
 	return key, nil
 }
 
