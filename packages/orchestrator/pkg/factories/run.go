@@ -5,6 +5,7 @@ package factories
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log"
@@ -1064,9 +1065,9 @@ func setupBuildStorage(ctx context.Context, limiter *limit.Limiter, orchConfig c
 		(spec.Provider == storage.AzureStorageProvider && orchConfig.LocalUploadBaseURL != "")
 
 	if proxyUploads {
-		hmacKey = make([]byte, 32)
-		if _, err := rand.Read(hmacKey); err != nil {
-			return nil, nil, fmt.Errorf("generate HMAC key: %w", err)
+		hmacKey, err = localUploadHMACKey(orchConfig)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		uploadBaseURL := orchConfig.LocalUploadBaseURL
@@ -1095,6 +1096,30 @@ func setupBuildStorage(ctx context.Context, limiter *limit.Limiter, orchConfig c
 	}
 
 	return provider, uploadHandler, nil
+}
+
+const localUploadHMACDomain = "e2b-local-upload-v1\x00"
+
+// localUploadHMACKey returns a process-safe key for client-reachable upload
+// proxies. An external URL can be load-balanced across allocations, so a
+// process-local random key would make URLs signed by one allocation invalid on
+// every other allocation (and after a rolling restart).
+func localUploadHMACKey(orchConfig cfg.Config) ([]byte, error) {
+	if configured := strings.TrimSpace(orchConfig.LocalUploadHMACKey); configured != "" {
+		digest := sha256.Sum256([]byte(localUploadHMACDomain + configured))
+
+		return digest[:], nil
+	}
+	if strings.TrimSpace(orchConfig.LocalUploadBaseURL) != "" {
+		return nil, errors.New("LOCAL_UPLOAD_HMAC_KEY is required when LOCAL_UPLOAD_BASE_URL is configured")
+	}
+
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("generate HMAC key: %w", err)
+	}
+
+	return key, nil
 }
 
 func newStorage(ctx context.Context, nodeID string, config network.Config, egressProxy network.EgressProxy) (network.Storage, error) {
