@@ -745,25 +745,9 @@ EOT
         right_delimiter = "]]"
         data            = <<EOT
 {
- "uid": "e2b-cluster-nodes",
- "title": "E2B Cluster Nodes",
- "timezone": "browser",
- "schemaVersion": 39,
- "refresh": "1m",
- "time": {
-  "from": "now-6h",
-  "to": "now"
- },
+ "id": 2,
  "panels": [
   {
-   "title": "Node available memory (GiB)",
-   "type": "timeseries",
-   "gridPos": {
-    "h": 9,
-    "w": 12,
-    "x": 0,
-    "y": 0
-   },
    "datasource": {
     "type": "grafana-clickhouse-datasource",
     "uid": "clickhouse"
@@ -772,29 +756,62 @@ EOT
     "defaults": {},
     "overrides": []
    },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
    "targets": [
     {
-     "refId": "A",
      "datasource": {
       "type": "grafana-clickhouse-datasource",
       "uid": "clickhouse"
      },
-     "editorType": "sql", "queryType": "timeseries",
+     "editorType": "sql",
+     "format": 1,
+     "pluginVersion": "4.20.0",
+     "queryType": "timeseries",
      "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['host'] AS host, avg(Value)/1073741824 AS avail_gib FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_memory_available' AND $__timeFilter(TimeUnix) GROUP BY time, host ORDER BY time",
-     "format": 1,
-     "pluginVersion": "4.20.0"
+     "refId": "A"
     }
-   ]
+   ],
+   "title": "Node available memory (GiB)",
+   "type": "timeseries"
   },
   {
-   "title": "Node CPU idle (%)",
-   "type": "timeseries",
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
    "gridPos": {
     "h": 9,
     "w": 12,
     "x": 12,
     "y": 0
    },
+   "targets": [
+    {
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "pluginVersion": "4.20.0",
+     "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['host'] AS host, avg(Value) AS idle_pct FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_cpu_idle' AND $__timeFilter(TimeUnix) GROUP BY time, host ORDER BY time",
+     "refId": "A"
+    }
+   ],
+   "title": "Node CPU idle (%)",
+   "type": "timeseries"
+  },
+  {
    "datasource": {
     "type": "grafana-clickhouse-datasource",
     "uid": "clickhouse"
@@ -803,29 +820,30 @@ EOT
     "defaults": {},
     "overrides": []
    },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "grafana-clickhouse-datasource",
-      "uid": "clickhouse"
-     },
-     "editorType": "sql", "queryType": "timeseries",
-     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['host'] AS host, avg(Value) AS idle_pct FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_cpu_idle' AND $__timeFilter(TimeUnix) GROUP BY time, host ORDER BY time",
-     "format": 1,
-     "pluginVersion": "4.20.0"
-    }
-   ]
-  },
-  {
-   "title": "Alloc memory usage by task (GiB)",
-   "type": "timeseries",
    "gridPos": {
     "h": 9,
     "w": 12,
     "x": 0,
     "y": 9
    },
+   "targets": [
+    {
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "pluginVersion": "4.20.0",
+     "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['task'] AS task, max(Value)/1073741824 AS used_gib FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_allocs_memory_usage' AND $__timeFilter(TimeUnix) GROUP BY time, task ORDER BY time",
+     "refId": "A"
+    }
+   ],
+   "title": "Alloc memory usage by task (GiB)",
+   "type": "timeseries"
+  },
+  {
    "datasource": {
     "type": "grafana-clickhouse-datasource",
     "uid": "clickhouse"
@@ -834,60 +852,195 @@ EOT
     "defaults": {},
     "overrides": []
    },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "grafana-clickhouse-datasource",
-      "uid": "clickhouse"
-     },
-     "editorType": "sql", "queryType": "timeseries",
-     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, Attributes['task'] AS task, max(Value)/1073741824 AS used_gib FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_allocs_memory_usage' AND $__timeFilter(TimeUnix) GROUP BY time, task ORDER BY time",
-     "format": 1,
-     "pluginVersion": "4.20.0"
-    }
-   ]
-  },
-  {
-   "title": "Node disk available (GiB)",
-   "type": "timeseries",
    "gridPos": {
     "h": 9,
     "w": 12,
     "x": 12,
     "y": 9
    },
-   "datasource": {
-    "type": "grafana-clickhouse-datasource",
-    "uid": "clickhouse"
-   },
-   "fieldConfig": {
-    "defaults": {},
-    "overrides": []
-   },
    "targets": [
     {
-     "refId": "A",
      "datasource": {
       "type": "grafana-clickhouse-datasource",
       "uid": "clickhouse"
      },
-     "editorType": "sql", "queryType": "timeseries",
-     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(Attributes['host'], ' ', Attributes['disk']) AS disk, avg(Value)/1073741824 AS avail_gib FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_disk_available' AND $__timeFilter(TimeUnix) GROUP BY time, disk ORDER BY time",
+     "editorType": "sql",
      "format": 1,
-     "pluginVersion": "4.20.0"
+     "pluginVersion": "4.20.0",
+     "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, concat(Attributes['host'], ' ', Attributes['disk']) AS disk, avg(Value)/1073741824 AS avail_gib FROM otel_metrics_gauge WHERE MetricName = 'nomad_client_host_disk_available' AND $__timeFilter(TimeUnix) GROUP BY time, disk ORDER BY time",
+     "refId": "A"
     }
-   ]
+   ],
+   "title": "Node disk available (GiB)",
+   "type": "timeseries"
   },
   {
-   "title": "Template-manager cgroup memory (%)",
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
    "description": "Build-cache eviction starts at 75%. The alert fires after usage remains above 85% for 10 minutes.",
-   "type": "timeseries",
+   "fieldConfig": {
+    "defaults": {
+     "max": 100,
+     "min": 0,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 75
+       },
+       {
+        "color": "red",
+        "value": 85
+       }
+      ]
+     },
+     "unit": "percent"
+    },
+    "overrides": []
+   },
    "gridPos": {
     "h": 9,
     "w": 12,
     "x": 0,
     "y": 18
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "pluginVersion": "4.20.0",
+     "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.current') / nullIf(maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.max'), 0) * 100 AS memory_pct FROM otel_metrics_gauge WHERE MetricName IN ('e2b.infra.build_cache.cgroup.memory.current', 'e2b.infra.build_cache.cgroup.memory.max') AND $__timeFilter(TimeUnix) GROUP BY time HAVING maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.max') > 0 ORDER BY time",
+     "refId": "A"
+    }
+   ],
+   "title": "Template-manager cgroup memory (%)",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "grafana-clickhouse-datasource",
+    "uid": "clickhouse"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "gbytes"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 18
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "grafana-clickhouse-datasource",
+      "uid": "clickhouse"
+     },
+     "editorType": "sql",
+     "format": 1,
+     "pluginVersion": "4.20.0",
+     "queryType": "timeseries",
+     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, replaceOne(MetricName, 'e2b.infra.build_cache.cgroup.memory.', '') AS kind, max(Value)/1073741824 AS used_gib FROM otel_metrics_gauge WHERE startsWith(MetricName, 'e2b.infra.build_cache.cgroup.memory.') AND MetricName != 'e2b.infra.build_cache.cgroup.memory.max' AND $__timeFilter(TimeUnix) GROUP BY time, kind ORDER BY time",
+     "refId": "A"
+    }
+   ],
+   "title": "Template-manager cgroup memory breakdown (GiB)",
+   "type": "timeseries"
+  },
+  {
+   "id": 100,
+   "title": "Client pool capacity: current / min / max",
+   "type": "table",
+   "gridPos": {
+    "h": 4,
+    "w": 24,
+    "x": 0,
+    "y": 27
+   },
+   "datasource": {
+    "type": "grafana-azure-monitor-datasource",
+    "uid": "azuremonitor"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "center",
+      "cellOptions": {
+       "type": "auto"
+      }
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "current"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-background"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "green",
+           "value": null
+          }
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "queryType": "Azure Resource Graph",
+     "subscriptions": [
+      "1501bd2f-63b8-4ac7-bf1b-4ecb77b88e31"
+     ],
+     "azureResourceGraph": {
+      "query": "resources | where type =~ 'microsoft.compute/virtualmachinescalesets' and name == 'e2b-orch-client' | project current=toint(sku.capacity), dummy=1 | join kind=inner (resources | where type =~ 'microsoft.insights/autoscalesettings' and name == 'e2b-orch-client-autoscale' | mv-expand profile = properties.profiles | project minimum=toint(profile.capacity.minimum), maximum=toint(profile.capacity.maximum), dummy=1) on dummy | project current, minimum, maximum",
+      "resultFormat": "table"
+     }
+    }
+   ]
+  },
+  {
+   "id": 101,
+   "title": "Per-node current usage vs limit",
+   "type": "table",
+   "gridPos": {
+    "h": 10,
+    "w": 24,
+    "x": 0,
+    "y": 31
    },
    "datasource": {
     "type": "grafana-clickhouse-datasource",
@@ -895,12 +1048,157 @@ EOT
    },
    "fieldConfig": {
     "defaults": {
-     "unit": "percent",
-     "min": 0,
-     "max": 100,
-     "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 75 }, { "color": "red", "value": 85 } ] }
+     "custom": {
+      "align": "center",
+      "cellOptions": {
+       "type": "auto"
+      }
+     }
     },
-    "overrides": []
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "pool"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Pool"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "node_id"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Node ID"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "cpu_used_pct"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "CPU used (%)"
+       },
+       {
+        "id": "unit",
+        "value": "percent"
+       },
+       {
+        "id": "max",
+        "value": 100
+       },
+       {
+        "id": "min",
+        "value": 0
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "gauge",
+         "mode": "gradient"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "green",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 70
+          },
+          {
+           "color": "red",
+           "value": 85
+          }
+         ]
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "mem_used_gib"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Memory used (GiB)"
+       },
+       {
+        "id": "unit",
+        "value": "decgbytes"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "mem_total_gib"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Memory limit (GiB)"
+       },
+       {
+        "id": "unit",
+        "value": "decgbytes"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "disk_used_gib"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Disk used (GiB)"
+       },
+       {
+        "id": "unit",
+        "value": "decgbytes"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "disk_total_gib"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Disk limit (GiB)"
+       },
+       {
+        "id": "unit",
+        "value": "decgbytes"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true
    },
    "targets": [
     {
@@ -909,45 +1207,24 @@ EOT
       "type": "grafana-clickhouse-datasource",
       "uid": "clickhouse"
      },
-     "editorType": "sql", "queryType": "timeseries",
-     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.current') / nullIf(maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.max'), 0) * 100 AS memory_pct FROM otel_metrics_gauge WHERE MetricName IN ('e2b.infra.build_cache.cgroup.memory.current', 'e2b.infra.build_cache.cgroup.memory.max') AND $__timeFilter(TimeUnix) GROUP BY time HAVING maxIf(Value, MetricName = 'e2b.infra.build_cache.cgroup.memory.max') > 0 ORDER BY time",
+     "editorType": "sql",
      "format": 1,
-     "pluginVersion": "4.20.0"
-    }
-   ]
-  },
-  {
-   "title": "Template-manager cgroup memory breakdown (GiB)",
-   "type": "timeseries",
-   "gridPos": {
-    "h": 9,
-    "w": 12,
-    "x": 12,
-    "y": 18
-   },
-   "datasource": {
-    "type": "grafana-clickhouse-datasource",
-    "uid": "clickhouse"
-   },
-   "fieldConfig": {
-    "defaults": { "unit": "gbytes" },
-    "overrides": []
-   },
-   "targets": [
-    {
-     "refId": "A",
-     "datasource": {
-      "type": "grafana-clickhouse-datasource",
-      "uid": "clickhouse"
-     },
-     "editorType": "sql", "queryType": "timeseries",
-     "rawSql": "SELECT $__timeInterval(TimeUnix) AS time, replaceOne(MetricName, 'e2b.infra.build_cache.cgroup.memory.', '') AS kind, max(Value)/1073741824 AS used_gib FROM otel_metrics_gauge WHERE startsWith(MetricName, 'e2b.infra.build_cache.cgroup.memory.') AND MetricName != 'e2b.infra.build_cache.cgroup.memory.max' AND $__timeFilter(TimeUnix) GROUP BY time, kind ORDER BY time",
-     "format": 1,
-     "pluginVersion": "4.20.0"
+     "queryType": "table",
+     "rawSql": "SELECT cm.node_pool AS pool, cm.node_id AS node_id, round(100 - cm.cpu_idle, 1) AS cpu_used_pct, round(cm.mem_used/1073741824,1) AS mem_used_gib, round(cm.mem_total/1073741824,1) AS mem_total_gib, round(d.disk_used/1073741824,1) AS disk_used_gib, round(d.disk_total/1073741824,1) AS disk_total_gib FROM ( SELECT any(node_pool) AS node_pool, node_id, avgIf(Value, MetricName='nomad_client_host_cpu_idle') AS cpu_idle, avgIf(Value, MetricName='nomad_client_host_memory_total')-avgIf(Value, MetricName='nomad_client_host_memory_available') AS mem_used, avgIf(Value, MetricName='nomad_client_host_memory_total') AS mem_total FROM ( SELECT Attributes['node_id'] AS node_id, Attributes['node_pool'] AS node_pool, MetricName, Value FROM otel_metrics_gauge WHERE MetricName IN ('nomad_client_host_cpu_idle','nomad_client_host_memory_total','nomad_client_host_memory_available') AND TimeUnix > now() - INTERVAL 5 MINUTE ) GROUP BY node_id ) cm INNER JOIN ( SELECT node_id, sum(total_v) - sum(avail_v) AS disk_used, sum(total_v) AS disk_total FROM ( SELECT node_id, disk, maxIf(Value, MetricName='nomad_client_host_disk_size') AS total_v, maxIf(Value, MetricName='nomad_client_host_disk_available') AS avail_v FROM ( SELECT Attributes['node_id'] AS node_id, Attributes['disk'] AS disk, MetricName, Value FROM otel_metrics_gauge WHERE MetricName IN ('nomad_client_host_disk_size','nomad_client_host_disk_available') AND TimeUnix > now() - INTERVAL 5 MINUTE AND Attributes['disk'] NOT LIKE '%loop%' ) GROUP BY node_id, disk ) GROUP BY node_id ) d ON cm.node_id = d.node_id ORDER BY pool, node_id"
     }
    ]
   }
- ]
+ ],
+ "refresh": "1m",
+ "schemaVersion": 39,
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "timezone": "browser",
+ "title": "E2B Cluster Nodes",
+ "uid": "e2b-cluster-nodes",
+ "version": 2
 }
 EOT
       }
