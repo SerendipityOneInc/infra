@@ -1618,7 +1618,7 @@ EOT
       "type": "grafana-postgresql-datasource",
       "uid": "e2bpg"
      },
-     "rawSql": "SELECT b.env_id AS template_id, b.status, b.vcpu, b.ram_mb, b.created_at, b.finished_at FROM env_builds b ORDER BY b.created_at DESC LIMIT 50",
+     "rawSql": "SELECT b.env_id AS template_id, b.status, b.cluster_node_id, b.vcpu, b.ram_mb, b.created_at, b.finished_at FROM env_builds b WHERE b.cluster_node_id LIKE 'e2b-orch-build%' OR b.cluster_node_id IS NULL ORDER BY b.created_at DESC LIMIT 50",
      "format": "table",
      "rawQuery": true,
      "editorMode": "code"
