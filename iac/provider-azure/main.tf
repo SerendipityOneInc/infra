@@ -516,6 +516,9 @@ locals {
     # header). Traefik routes api.<domain>/upload here (job-template-manager
     # service tags), so the URL works for both the public and internal domains.
     LOCAL_UPLOAD_BASE_URL = "https://api.${var.domain_name}"
+    # Every template-manager allocation must verify URLs with the same key.
+    # The orchestrator domain-separates this source secret before HMAC use.
+    LOCAL_UPLOAD_HMAC_KEY = module.init.api_secret
   }, var.template_manager_env_vars)
 }
 
