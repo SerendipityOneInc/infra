@@ -313,6 +313,7 @@ resource "nomad_job" "grafana" {
 
   jobspec = templatefile("${path.module}/jobs/grafana.hcl", {
     node_pool           = var.api_node_pool
+    environment         = var.environment
     domain_name         = var.domain_name
     admin_password      = var.grafana_admin_password
     loki_port           = var.loki_port
