@@ -1064,9 +1064,16 @@ func setupBuildStorage(ctx context.Context, limiter *limit.Limiter, orchConfig c
 		(spec.Provider == storage.AzureStorageProvider && orchConfig.LocalUploadBaseURL != "")
 
 	if proxyUploads {
-		hmacKey = make([]byte, 32)
-		if _, err := rand.Read(hmacKey); err != nil {
-			return nil, nil, fmt.Errorf("generate HMAC key: %w", err)
+		if orchConfig.LocalUploadHMACKey != "" {
+			// Shared across allocations so any of them can validate a URL
+			// another one signed — required once there's more than one
+			// template-manager alloc behind the unsticky /upload route.
+			hmacKey = []byte(orchConfig.LocalUploadHMACKey)
+		} else {
+			hmacKey = make([]byte, 32)
+			if _, err := rand.Read(hmacKey); err != nil {
+				return nil, nil, fmt.Errorf("generate HMAC key: %w", err)
+			}
 		}
 
 		uploadBaseURL := orchConfig.LocalUploadBaseURL

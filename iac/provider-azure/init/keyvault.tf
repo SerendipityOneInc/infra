@@ -167,6 +167,30 @@ resource "random_password" "admin_token" {
   special = false
 }
 
+# ---
+# Template-manager upload HMAC key
+# ---
+# Shared across every template-manager allocation so any of them can
+# validate an /upload URL another one signed — Traefik load-balances that
+# route with no session affinity (see LOCAL_UPLOAD_HMAC_KEY in
+# provider-azure/main.tf and packages/orchestrator/pkg/factories/run.go).
+resource "random_password" "upload_hmac_key" {
+  length  = 32
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "upload_hmac_key" {
+  name         = "${var.prefix}upload-hmac-key"
+  key_vault_id = azurerm_key_vault.main.id
+  value        = random_password.upload_hmac_key.result
+
+  depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
 resource "azurerm_key_vault_secret" "admin_token" {
   name         = "${var.prefix}admin-token"
   key_vault_id = azurerm_key_vault.main.id

@@ -516,6 +516,10 @@ locals {
     # header). Traefik routes api.<domain>/upload here (job-template-manager
     # service tags), so the URL works for both the public and internal domains.
     LOCAL_UPLOAD_BASE_URL = "https://api.${var.domain_name}"
+    # Traefik has no session affinity on /upload, so a URL signed by one
+    # allocation can be validated by another — must be the same key on every
+    # allocation, not the per-process random key orchestrator falls back to.
+    LOCAL_UPLOAD_HMAC_KEY = module.init.upload_hmac_key
   }, var.template_manager_env_vars)
 }
 
