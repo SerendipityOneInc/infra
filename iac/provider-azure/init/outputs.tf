@@ -147,6 +147,11 @@ output "admin_token" {
   sensitive = true
 }
 
+output "upload_hmac_key" {
+  value     = random_password.upload_hmac_key.result
+  sensitive = true
+}
+
 output "sandbox_access_token_hash_seed" {
   value     = random_password.sandbox_access_token_hash_seed.result
   sensitive = true
