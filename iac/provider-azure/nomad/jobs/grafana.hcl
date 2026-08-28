@@ -381,6 +381,10 @@ policies:
   - orgId: 1
     receiver: grafana-default-email
     group_by: ["grafana_folder", "alertname"]
+%{ if environment == "production" ~}
+    # The PagerDuty contact point exists only on production (added manually in
+    # the UI, not provisioned). Referencing it on an environment where it does
+    # not exist fails alerting provisioning and crash-loops Grafana at startup.
     routes:
       - receiver: PagerDuty
         object_matchers:
@@ -389,6 +393,7 @@ policies:
         group_interval: 5m
         repeat_interval: 4h
         continue: false
+%{ endif ~}
 EOT
       }
 
