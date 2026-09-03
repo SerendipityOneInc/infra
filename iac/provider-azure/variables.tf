@@ -322,6 +322,22 @@ variable "template_manager_memory_max_mb" {
   default     = -1
 }
 
+variable "template_manager_build_cache_watermark_pct" {
+  type        = number
+  description = <<-EOT
+    BUILD_CACHE_MEMORY_HIGH_WATERMARK_PERCENTAGE for the template-manager:
+    cache eviction starts once cgroup usage crosses this share of memory_max.
+    The gap it leaves (100 - watermark) is the only standing headroom for
+    concurrent build VMs, whose memory is charged to the same cgroup —
+    eviction is delayed and only drains back to the watermark, so a burst
+    larger than that gap kills builds. Size it so the gap covers realistic
+    concurrent build memory on the node: lower it where memory_max is tight
+    relative to burst size (e.g. small build nodes), keep it high where
+    memory_max is generous and cache hit-rate matters more.
+  EOT
+  default     = 75
+}
+
 variable "control_server_cluster_size" {
   type    = number
   default = 3
