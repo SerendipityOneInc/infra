@@ -508,9 +508,9 @@ locals {
     GIN_MODE                     = "release"
     LAUNCH_DARKLY_API_KEY        = module.init.launch_darkly_api_key
     # Build-layer mmaps are charged to the task cgroup even when the host still
-    # has free RAM. Reclaim the oldest inactive layers before the 50 GiB task
-    # limit leaves too little headroom for the next Firecracker memfd mapping.
-    BUILD_CACHE_MEMORY_HIGH_WATERMARK_PERCENTAGE = "75"
+    # has free RAM. Reclaim the oldest inactive layers before the task limit
+    # leaves too little headroom for the next Firecracker memfd mapping.
+    BUILD_CACHE_MEMORY_HIGH_WATERMARK_PERCENTAGE = tostring(var.template_manager_build_cache_watermark_pct)
     # Azure uploads route through the HMAC proxy endpoint on this server (the
     # e2b SDK cannot bare-PUT to an Azure SAS URL — mandatory x-ms-blob-type
     # header). Traefik routes api.<domain>/upload here (job-template-manager
