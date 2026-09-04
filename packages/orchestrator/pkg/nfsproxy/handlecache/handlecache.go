@@ -49,6 +49,7 @@ func New(h nfs.Handler, limit int, verifierLimit int) nfs.Handler {
 // CachingHandler implements to/from handle via an LRU cache.
 type CachingHandler struct {
 	nfs.Handler
+
 	activeHandles    *lru.Cache[uuid.UUID, entry]
 	reverseHandles   map[string][]uuid.UUID
 	reverseHandlesMu sync.RWMutex
@@ -163,6 +164,7 @@ func (c *CachingHandler) evictReverseCache(path string, handle uuid.UUID) {
 			if len(c.reverseHandles[path]) == 0 {
 				delete(c.reverseHandles, path)
 			}
+
 			return
 		}
 	}
