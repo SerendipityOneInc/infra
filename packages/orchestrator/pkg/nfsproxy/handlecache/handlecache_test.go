@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,6 +21,8 @@ func newCache(t *testing.T, limit int) *CachingHandler {
 }
 
 func TestHandleCache_WhenRoundTripping_ShouldReturnSamePath(t *testing.T) {
+	t.Parallel()
+
 	c := newCache(t, 16)
 	fs := memfs.New()
 	ctx := context.Background()
@@ -35,12 +36,14 @@ func TestHandleCache_WhenRoundTripping_ShouldReturnSamePath(t *testing.T) {
 }
 
 func TestHandleCache_WhenHandleEvicted_ShouldReturnStale(t *testing.T) {
+	t.Parallel()
+
 	c := newCache(t, 4)
 	fs := memfs.New()
 	ctx := context.Background()
 
 	fh := c.ToHandle(ctx, fs, []string{"victim"})
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		c.ToHandle(ctx, fs, []string{fmt.Sprintf("filler-%d", i)})
 	}
 
@@ -52,6 +55,8 @@ func TestHandleCache_WhenHandleEvicted_ShouldReturnStale(t *testing.T) {
 }
 
 func TestHandleCache_WhenDescendantAccessed_ShouldKeepAncestorsWarm(t *testing.T) {
+	t.Parallel()
+
 	c := newCache(t, 4)
 	fs := memfs.New()
 	ctx := context.Background()
@@ -62,7 +67,7 @@ func TestHandleCache_WhenDescendantAccessed_ShouldKeepAncestorsWarm(t *testing.T
 
 	// Each leaf access must bump root and dir, so the fillers evict the
 	// idle unrelated entries instead of the ancestors in active use.
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		_, _, err := c.FromHandle(ctx, leafFH)
 		require.NoError(t, err)
 		c.ToHandle(ctx, fs, []string{fmt.Sprintf("filler-%d", i)})
@@ -75,6 +80,8 @@ func TestHandleCache_WhenDescendantAccessed_ShouldKeepAncestorsWarm(t *testing.T
 }
 
 func TestHandleCache_WhenSamePathOnOtherFilesystem_ShouldNotShareHandles(t *testing.T) {
+	t.Parallel()
+
 	c := newCache(t, 16)
 	fsA := memfs.New()
 	fsB := memfs.New()
@@ -89,11 +96,13 @@ func TestHandleCache_WhenSamePathOnOtherFilesystem_ShouldNotShareHandles(t *test
 	require.NoError(t, err)
 	gotB, _, err := c.FromHandle(ctx, fhB)
 	require.NoError(t, err)
-	assert.Equal(t, billy.Filesystem(fsA), gotA)
-	assert.Equal(t, billy.Filesystem(fsB), gotB)
+	assert.Equal(t, fsA, gotA)
+	assert.Equal(t, fsB, gotB)
 }
 
 func TestHandleCache_WhenInvalidated_ShouldReturnStaleAndDropReverseEntry(t *testing.T) {
+	t.Parallel()
+
 	c := newCache(t, 16)
 	fs := memfs.New()
 	ctx := context.Background()
