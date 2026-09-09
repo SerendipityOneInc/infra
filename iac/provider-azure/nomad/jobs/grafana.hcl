@@ -765,7 +765,8 @@ EOT
     { "refId": "A", "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "azuremonitor" },
       "queryType": "Azure Monitor",
       "subscription": "${azure_monitor_subscription_id}",
-      "azureMonitor": { "metricNamespace": "e2b", "metricName": "SlotsUsedPct", "aggregation": "Maximum", "timeGrain": "PT1M", "region": "centralus", "resources": [ { "subscription": "${azure_monitor_subscription_id}", "resourceGroup": "${azure_monitor_resource_group}", "resourceName": "${client_vmss_name}" } ] } }
+      "azureMonitor": { "metricNamespace": "e2b", "metricName": "SlotsUsedPct", "aggregation": "Maximum", "timeGrain": "PT1M", "region": "centralus" },
+      "resources": [ { "subscription": "${azure_monitor_subscription_id}", "resourceGroup": "${azure_monitor_resource_group}", "resourceName": "${client_vmss_name}" } ] }
    ]
   },
   {
