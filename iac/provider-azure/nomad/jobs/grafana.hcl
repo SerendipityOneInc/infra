@@ -753,6 +753,22 @@ EOT
  "id": 2,
  "panels": [
   {
+   "id": 802,
+   "title": "Client pool SlotsUsedPct (max)",
+   "description": "Pool-wide max slot utilisation from Azure Monitor — same signal as the 'Client pool sustained near capacity' alert. Instance count (capacity table) can sit flat while this climbs to 90%+.",
+   "type": "timeseries",
+   "gridPos": { "h": 8, "w": 24, "x": 0, "y": 41 },
+   "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "azuremonitor" },
+   "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "min": 0, "custom": { "fillOpacity": 10, "showPoints": "never" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 70 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single" } },
+   "targets": [
+    { "refId": "A", "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "azuremonitor" },
+      "queryType": "Azure Monitor",
+      "subscription": "${azure_monitor_subscription_id}",
+      "azureMonitor": { "metricNamespace": "e2b", "metricName": "SlotsUsedPct", "aggregation": "Maximum", "timeGrain": "PT1M", "region": "centralus", "resources": [ { "subscription": "${azure_monitor_subscription_id}", "resourceGroup": "${azure_monitor_resource_group}", "resourceName": "${client_vmss_name}" } ] } }
+   ]
+  },
+  {
    "datasource": {
     "type": "grafana-clickhouse-datasource",
     "uid": "clickhouse"
@@ -1501,6 +1517,36 @@ EOT
   "to": "now"
  },
  "panels": [
+  {
+   "id": 800,
+   "title": "Template build failures (per bucket)",
+   "description": "Failed template builds over time — same signal as the 'Template build failure rate' alert (env_builds.status_group='failed').",
+   "type": "timeseries",
+   "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+   "datasource": { "type": "grafana-postgresql-datasource", "uid": "e2bpg" },
+   "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 40, "showPoints": "never" }, "color": { "mode": "fixed", "fixedColor": "red" } }, "overrides": [] },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single" } },
+   "targets": [
+    { "refId": "A", "datasource": { "type": "grafana-postgresql-datasource", "uid": "e2bpg" },
+      "rawSql": "SELECT $__timeGroup(finished_at, $__interval) AS time, count(*) AS failed FROM env_builds WHERE status_group = 'failed' AND $__timeFilter(finished_at) GROUP BY time ORDER BY time",
+      "format": "time_series", "rawQuery": true, "editorMode": "code" }
+   ]
+  },
+  {
+   "id": 801,
+   "title": "Team sandbox concurrency (% of cap)",
+   "description": "Per-team running sandboxes as % of the 300 concurrency cap — same signal as the 'Team sandbox concurrency pressure' alert (team_metrics_gauge / e2b.team.sandbox.running).",
+   "type": "timeseries",
+   "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+   "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+   "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "min": 0, "custom": { "fillOpacity": 10, "showPoints": "never" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 70 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+   "targets": [
+    { "refId": "A", "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "rawSql": "SELECT $__timeInterval(timestamp) AS time, team_id, avg(value)/300*100 AS concurrency_pct FROM team_metrics_gauge WHERE metric_name = 'e2b.team.sandbox.running' AND $__timeFilter(timestamp) GROUP BY time, team_id ORDER BY time",
+      "format": "time_series" }
+   ]
+  },
   {
    "title": "Teams",
    "type": "table",
