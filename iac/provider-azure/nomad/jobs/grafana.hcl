@@ -1544,7 +1544,7 @@ EOT
    "targets": [
     { "refId": "A", "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
       "rawSql": "SELECT $__timeInterval(timestamp) AS time, team_id, avg(value)/300*100 AS concurrency_pct FROM team_metrics_gauge WHERE metric_name = 'e2b.team.sandbox.running' AND $__timeFilter(timestamp) GROUP BY time, team_id ORDER BY time",
-      "format": "time_series" }
+      "queryType": "timeseries", "format": 1 }
    ]
   },
   {
