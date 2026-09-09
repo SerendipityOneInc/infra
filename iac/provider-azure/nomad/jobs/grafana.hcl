@@ -753,6 +753,22 @@ EOT
  "id": 2,
  "panels": [
   {
+   "id": 802,
+   "title": "Client pool SlotsUsedPct (max)",
+   "description": "Pool-wide max slot utilisation from Azure Monitor — same signal as the 'Client pool sustained near capacity' alert. Instance count (capacity table) can sit flat while this climbs to 90%+.",
+   "type": "timeseries",
+   "gridPos": { "h": 8, "w": 24, "x": 0, "y": 41 },
+   "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "azuremonitor" },
+   "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "min": 0, "custom": { "fillOpacity": 10, "showPoints": "never" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 70 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single" } },
+   "targets": [
+    { "refId": "A", "datasource": { "type": "grafana-azure-monitor-datasource", "uid": "azuremonitor" },
+      "queryType": "Azure Monitor",
+      "subscription": "${azure_monitor_subscription_id}",
+      "azureMonitor": { "metricNamespace": "e2b", "metricName": "SlotsUsedPct", "aggregation": "Maximum", "timeGrain": "PT1M", "region": "centralus", "resources": [ { "subscription": "${azure_monitor_subscription_id}", "resourceGroup": "${azure_monitor_resource_group}", "resourceName": "${client_vmss_name}" } ] } }
+   ]
+  },
+  {
    "datasource": {
     "type": "grafana-clickhouse-datasource",
     "uid": "clickhouse"
@@ -1268,11 +1284,39 @@ EOT
  },
  "panels": [
   {
+   "id": 900,
+   "type": "row",
+   "title": "Sandbox health",
+   "collapsed": false,
+   "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+  },
+  {
+   "id": 901,
+   "title": "Sandbox healthcheck failures",
+   "description": "Count of sandboxes whose healthcheck started failing, per time bucket — same signal as the 'Sandbox healthcheck failures' alert rule ({service=\"orchestrator\"} level=error |= \"healthcheck started failing\").",
+   "type": "timeseries",
+   "gridPos": { "h": 8, "w": 24, "x": 0, "y": 1 },
+   "datasource": { "type": "loki", "uid": "loki" },
+   "fieldConfig": {
+    "defaults": { "unit": "none", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 40, "showPoints": "never" }, "color": { "mode": "fixed", "fixedColor": "red" } },
+    "overrides": []
+   },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single" } },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": { "type": "loki", "uid": "loki" },
+     "expr": "sum(count_over_time({service=\"orchestrator\"} | json | level=\"error\" |= \"healthcheck started failing\" [$__auto]))",
+     "legendFormat": "healthcheck failures"
+    }
+   ]
+  },
+  {
    "id": 100,
    "type": "row",
    "title": "Summary — aggregate over selected sandboxes",
    "collapsed": false,
-   "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+   "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
    "panels": []
   },
   {
@@ -1280,7 +1324,7 @@ EOT
    "title": "Active sandboxes",
    "description": "Distinct sandboxes reporting metrics in each interval.",
    "type": "timeseries",
-   "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+   "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
    "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
    "fieldConfig": {
     "defaults": { "unit": "none", "decimals": 0, "custom": { "fillOpacity": 10, "showPoints": "never" } },
@@ -1303,7 +1347,7 @@ EOT
    "title": "Total vCPU — used vs allocated",
    "description": "used = sum over sandboxes of cpu.used% x cpu.total. allocated = sum of cpu.total. Compare against the node's physical vCPU count to see oversubscription.",
    "type": "timeseries",
-   "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+   "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
    "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
    "fieldConfig": {
     "defaults": { "unit": "none", "decimals": 2, "custom": { "fillOpacity": 10, "showPoints": "never" } },
@@ -1329,7 +1373,7 @@ EOT
    "title": "Total RAM — used vs allocated",
    "description": "used = sum of ram.used. allocated = sum of ram.total (what the templates asked for). The gap is memory paid for but not touched.",
    "type": "timeseries",
-   "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+   "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
    "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
    "fieldConfig": {
     "defaults": { "unit": "bytes", "custom": { "fillOpacity": 10, "showPoints": "never" } },
@@ -1355,7 +1399,7 @@ EOT
    "type": "row",
    "title": "Per-sandbox detail — one line per sandbox",
    "collapsed": false,
-   "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+   "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
    "panels": []
   },
   {
@@ -1363,7 +1407,7 @@ EOT
    "title": "CPU used (%) per sandbox",
    "description": "Percentage of the sandbox's own vCPU allocation. Pick specific sandboxes in the Sandbox variable — with All selected this draws one line per active sandbox.",
    "type": "timeseries",
-   "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+   "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
    "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
    "fieldConfig": {
     "defaults": { "unit": "percent", "min": 0, "custom": { "fillOpacity": 0, "showPoints": "never" } },
@@ -1389,7 +1433,7 @@ EOT
    "title": "RAM used per sandbox",
    "description": "ram.used per sandbox. Does not include page cache (see ram.cache).",
    "type": "timeseries",
-   "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
+   "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
    "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
    "fieldConfig": {
     "defaults": { "unit": "bytes", "min": 0, "custom": { "fillOpacity": 0, "showPoints": "never" } },
@@ -1415,7 +1459,7 @@ EOT
    "title": "Disk used per sandbox",
    "description": "disk.used per sandbox — the writable overlay on the node's local NVMe.",
    "type": "timeseries",
-   "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
+   "gridPos": { "h": 9, "w": 12, "x": 0, "y": 28 },
    "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
    "fieldConfig": {
     "defaults": { "unit": "bytes", "min": 0, "custom": { "fillOpacity": 0, "showPoints": "never" } },
@@ -1440,7 +1484,7 @@ EOT
    "id": 7,
    "title": "Recent sandbox logs",
    "type": "logs",
-   "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
+   "gridPos": { "h": 9, "w": 12, "x": 12, "y": 28 },
    "datasource": { "type": "loki", "uid": "loki" },
    "fieldConfig": { "defaults": {}, "overrides": [] },
    "targets": [
@@ -1473,6 +1517,36 @@ EOT
   "to": "now"
  },
  "panels": [
+  {
+   "id": 800,
+   "title": "Template build failures (per bucket)",
+   "description": "Failed template builds over time — same signal as the 'Template build failure rate' alert (env_builds.status_group='failed').",
+   "type": "timeseries",
+   "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+   "datasource": { "type": "grafana-postgresql-datasource", "uid": "e2bpg" },
+   "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 40, "showPoints": "never" }, "color": { "mode": "fixed", "fixedColor": "red" } }, "overrides": [] },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": false }, "tooltip": { "mode": "single" } },
+   "targets": [
+    { "refId": "A", "datasource": { "type": "grafana-postgresql-datasource", "uid": "e2bpg" },
+      "rawSql": "SELECT $__timeGroup(finished_at, $__interval) AS time, count(*) AS failed FROM env_builds WHERE status_group = 'failed' AND $__timeFilter(finished_at) GROUP BY time ORDER BY time",
+      "format": "time_series", "rawQuery": true, "editorMode": "code" }
+   ]
+  },
+  {
+   "id": 801,
+   "title": "Team sandbox concurrency (% of cap)",
+   "description": "Per-team running sandboxes as % of the 300 concurrency cap — same signal as the 'Team sandbox concurrency pressure' alert (team_metrics_gauge / e2b.team.sandbox.running).",
+   "type": "timeseries",
+   "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+   "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+   "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1, "min": 0, "custom": { "fillOpacity": 10, "showPoints": "never" }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 70 }, { "color": "red", "value": 90 } ] } }, "overrides": [] },
+   "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } },
+   "targets": [
+    { "refId": "A", "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "rawSql": "SELECT $__timeInterval(timestamp) AS time, team_id, avg(value)/300*100 AS concurrency_pct FROM team_metrics_gauge WHERE metric_name = 'e2b.team.sandbox.running' AND $__timeFilter(timestamp) GROUP BY time, team_id ORDER BY time",
+      "queryType": "timeseries", "format": 1 }
+   ]
+  },
   {
    "title": "Teams",
    "type": "table",
