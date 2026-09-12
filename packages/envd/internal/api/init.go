@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/awnumar/memguard"
@@ -33,6 +34,10 @@ var pinMMDSWarnLimit = ratelimit.New(10 * time.Second)
 var (
 	ErrAccessTokenMismatch           = errors.New("access token validation failed")
 	ErrAccessTokenResetNotAuthorized = errors.New("access token reset not authorized")
+	// ErrNFSMountInProgress reports that another /init is still setting the
+	// volumes up. It must surface as a retryable failure: returning success
+	// here would let /init answer "ready" on a sandbox with nothing mounted.
+	ErrNFSMountInProgress = errors.New("NFS volumes are still being mounted")
 )
 
 const (
@@ -338,6 +343,10 @@ func writeInitError(w http.ResponseWriter, logger zerolog.Logger, err error) {
 		// Not a failure, a concurrent install still holds the CA lock.
 		logger.Warn().Err(err).Msg("CA initialization still in progress, retrying")
 		w.WriteHeader(http.StatusServiceUnavailable)
+	case errors.Is(err, ErrNFSMountInProgress):
+		// Not a failure either, another /init still holds the mount guard.
+		logger.Warn().Err(err).Msg("NFS mount still in progress, retrying")
+		w.WriteHeader(http.StatusServiceUnavailable)
 	default:
 		logger.Error().Msgf("Failed to set data: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -366,12 +375,49 @@ var nfsOptions = strings.Join([]string{
 
 const nfsMountTimeout = 10 * time.Second
 
-func (a *API) setupNFS(ctx context.Context, logger zerolog.Logger, lifecycleID *string, mounts []VolumeMount) (e error) {
-	// Prevent concurrent mounting attempts
-	if !a.isMountingNFS.CompareAndSwap(false, true) {
-		logger.Debug().Msg("NFS volumes already mounting")
+// nfsCmdWaitDelay bounds how long Wait may block on the output pipe after the
+// process itself is gone.
+const nfsCmdWaitDelay = 2 * time.Second
 
-		return e
+// runNFSCmd runs one mount helper and returns its combined output.
+//
+// mount(8) forks mount.nfs(8). A context timeout only signals the direct child,
+// so mount.nfs survives, gets reparented to PID 1, and keeps the write end of
+// the CombinedOutput pipe open — Wait then blocks on that pipe forever and the
+// caller's mount timeout never takes effect. Two guards, both needed:
+//
+//   - Setpgid plus a Cancel that signals the whole process group, so the helper
+//     and everything it forked die together when the context expires.
+//   - WaitDelay, so Wait gives up on the pipe even if something still holds it.
+//     This is a backstop for the group kill, not a replacement: without the
+//     group kill a stray mount.nfs would keep running against the volume.
+func runNFSCmd(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+
+		// Negative PID targets the process group Setpgid created, which is
+		// what catches the forked mount.nfs.
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = nfsCmdWaitDelay
+
+	return cmd.CombinedOutput()
+}
+
+func (a *API) setupNFS(ctx context.Context, logger zerolog.Logger, lifecycleID *string, mounts []VolumeMount) (e error) {
+	// Prevent concurrent mounting attempts. Report this as a retryable error
+	// rather than success: the caller turns a nil return into a 204 "ready",
+	// which would claim the sandbox is up with /workspace not mounted.
+	if !a.isMountingNFS.CompareAndSwap(false, true) {
+		logger.Warn().Msg("NFS volumes already mounting")
+
+		return ErrNFSMountInProgress
 	}
 	defer a.isMountingNFS.Store(false)
 
@@ -407,9 +453,27 @@ func (a *API) setupNFS(ctx context.Context, logger zerolog.Logger, lifecycleID *
 				return fmt.Errorf("failed to unmount stale NFS mount at %q: %w", volume.Path, err)
 			}
 
+			// Boundary log: everything after this point is the new mount, so a
+			// stalled resume can be told apart from a stalled unmount. The
+			// trailing "Unmounting stale NFS mount" line previously read as if
+			// the unmount was the stuck step when it had in fact completed.
+			logger.Info().Str("path", volume.Path).Msg("NFS unmount complete, starting mount")
+
+			start := time.Now()
 			if err := a.mountNFS(wgCtx, volume.NfsTarget, volume.Path); err != nil {
+				logger.Error().Err(err).
+					Str("path", volume.Path).
+					Str("target", volume.NfsTarget).
+					Dur("elapsed", time.Since(start)).
+					Msg("NFS mount failed")
+
 				return fmt.Errorf("failed to mount NFS at %q: %w", volume.Path, err)
 			}
+			logger.Info().
+				Str("path", volume.Path).
+				Str("target", volume.NfsTarget).
+				Dur("elapsed", time.Since(start)).
+				Msg("NFS mount succeeded")
 
 			a.mountedPaths.Store(volume.Path, requestLifecycleID)
 
@@ -423,7 +487,7 @@ func (a *API) setupNFS(ctx context.Context, logger zerolog.Logger, lifecycleID *
 func (a *API) unmountNFS(ctx context.Context, logger zerolog.Logger, path string) error {
 	// Check if actually mounted before trying to unmount.
 	// findmnt returns exit code 1 when path is not a mount point - that's not an error.
-	data, err := exec.CommandContext(ctx, "findmnt", "--noheadings", "--output", "SOURCE", path).CombinedOutput()
+	data, err := runNFSCmd(ctx, "findmnt", "--noheadings", "--output", "SOURCE", path)
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
@@ -441,12 +505,12 @@ func (a *API) unmountNFS(ctx context.Context, logger zerolog.Logger, path string
 
 	logger.Debug().Msgf("Unmounting stale NFS mount at %q (was: %s)", path, source)
 
-	if data, err = exec.CommandContext(ctx, "umount", "--force", path).CombinedOutput(); err != nil {
+	if data, err = runNFSCmd(ctx, "umount", "--force", path); err != nil {
 		logger.Warn().Err(err).Str("path", path).Str("output", string(data)).Msg("Forced NFS umount failed, falling back to lazy")
 		// Fresh ctx so the forced umount running out of budget doesn't kill the fallback.
 		lazyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
-		if data, err = exec.CommandContext(lazyCtx, "umount", "--lazy", path).CombinedOutput(); err != nil {
+		if data, err = runNFSCmd(lazyCtx, "umount", "--lazy", path); err != nil {
 			return fmt.Errorf("failed to unmount stale NFS mount at %q: %w\n%s", path, err, string(data))
 		}
 	}
@@ -463,7 +527,7 @@ func (a *API) mountNFS(ctx context.Context, nfsTarget, path string) error {
 	}
 
 	for _, command := range commands {
-		data, err := exec.CommandContext(ctx, command[0], command[1:]...).CombinedOutput()
+		data, err := runNFSCmd(ctx, command[0], command[1:]...)
 		if err != nil {
 			return fmt.Errorf("`%s` failed: %w\n%s", strings.Join(command, " "), err, string(data))
 		}
